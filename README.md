@@ -12,6 +12,23 @@ c:\Projects\sj37\index.html   ← 더블클릭
 
 PC와 모바일 브라우저 모두 지원합니다.
 
+## GitHub Pages 배포
+
+빌드 과정이 없고 경로가 모두 상대 경로라, 저장소를 그대로 올리면 됩니다.
+
+```bash
+git remote add origin https://github.com/<아이디>/sj37.git
+git push -u origin main
+```
+
+푸시한 뒤 **Settings → Pages → Build and deployment** 에서
+Source를 `Deploy from a branch`, Branch를 `main` / `/ (root)` 로 두고 저장하면
+1~2분 뒤 `https://<아이디>.github.io/sj37/` 에서 바로 플레이할 수 있습니다.
+
+- 비공개 저장소의 Pages 배포는 GitHub 유료 플랜에서만 됩니다. 무료 계정이면 저장소를 공개로 두세요.
+- `.nojekyll` 파일이 있어 Jekyll 전처리를 건너뜁니다.
+- 하위 경로(`/sj37/`)에 배포돼도 동작합니다. 절대 경로를 쓰지 않았습니다.
+
 ## 조작
 
 - **카드를 클릭하면 바로 사용**됩니다. 확인 단계는 없습니다.
