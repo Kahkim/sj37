@@ -3,29 +3,259 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>37 게임</title>
-<meta name="description" content="HP가 곧 카드 사용 비용인 37장 덱 카드 게임. 10라운드 종료 시 HP가 가장 높은 플레이어가 승리합니다.">
+<title>37 게임 | HP를 써서 살아남는 전략 카드게임</title>
+<meta name="description" content="HP가 곧 카드 사용 비용인 37장 덱 전략 카드게임. 설치 없이 브라우저에서 3~4인전으로 AI와 바로 플레이하세요.">
 <meta name="theme-color" content="#12151c">
 <meta name="mobile-web-app-capable" content="yes">
 <meta property="og:type" content="website">
-<meta property="og:title" content="37 게임">
-<meta property="og:description" content="HP가 곧 카드 사용 비용인 37장 덱 카드 게임. 3~4인전, AI 상대와 바로 플레이.">
+<meta property="og:title" content="37 게임 | HP를 써서 살아남는 전략 카드게임">
+<meta property="og:description" content="37장의 카드, HP 기반 자원 관리, 3~4인전, AI 상대. 설치 없이 브라우저에서 바로 플레이.">
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%23e8c56a"/><text x="32" y="46" font-size="34" font-weight="bold" text-anchor="middle" font-family="sans-serif" fill="%231b1b1b">37</text></svg>'>
 <link rel="stylesheet" href="styles.css">
+<style>
+  #start{
+    display:block;height:auto;min-height:100vh;text-align:left;overflow:hidden;
+    background:
+      radial-gradient(900px 460px at 74% 14%,rgba(91,140,255,.13),transparent 62%),
+      radial-gradient(680px 420px at 12% 0%,rgba(232,197,106,.10),transparent 58%);
+  }
+  #start .landing{max-width:1180px;margin:0 auto;padding:0 24px 52px}
+  #start .landing-nav{height:76px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+  #start .brand{display:flex;align-items:center;gap:11px;color:#fff;text-decoration:none;font-weight:900;letter-spacing:.4px}
+  #start .brand-mark{width:39px;height:39px;display:grid;place-items:center;border-radius:11px;background:var(--gold);color:#171717;font-size:19px;box-shadow:0 8px 24px rgba(232,197,106,.18)}
+  #start .brand-copy small{display:block;color:var(--dim);font-size:10px;font-weight:600;letter-spacing:1.1px;margin-top:-1px}
+  #start .nav-links{display:flex;align-items:center;gap:8px}
+  #start .nav-links a{color:#aeb7c9;text-decoration:none;font-size:13px;padding:8px 11px;border-radius:8px}
+  #start .nav-links a:hover{color:#fff;background:rgba(255,255,255,.05)}
+  #start .github-link{border:1px solid var(--line);background:rgba(255,255,255,.025)}
+
+  #start .hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);gap:58px;align-items:center;padding:72px 0 74px}
+  #start .eyebrow{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(232,197,106,.25);background:rgba(232,197,106,.08);color:var(--gold);padding:7px 11px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.3px}
+  #start .eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 13px var(--gold)}
+  #start .hero h1{font-size:clamp(46px,6vw,78px);line-height:.98;letter-spacing:-4px;margin:21px 0 22px;color:#fff;max-width:760px}
+  #start .hero h1 em{font-style:normal;color:var(--gold)}
+  #start .hero-copy{font-size:17px;line-height:1.75;color:#aeb7c9;max-width:630px;margin:0 0 31px}
+  #start .hero-copy b{color:#f4f6fb}
+  #start .hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+  #start .pcount-row{justify-content:flex-start;gap:12px}
+  #start .pcount{
+    min-width:166px;padding:14px 20px;border-radius:12px;font-size:15px;font-weight:800;
+    border:1px solid #6f89c8;background:linear-gradient(180deg,#5b8cff,#4772d5);color:#fff;
+    box-shadow:0 10px 28px rgba(91,140,255,.22);display:flex;align-items:flex-start;text-align:left;gap:2px;
+  }
+  #start .pcount:nth-child(2){border-color:#776b45;background:linear-gradient(180deg,#2a2e38,#20252f);box-shadow:none}
+  #start .pcount small{color:rgba(255,255,255,.72);font-weight:500}
+  #start .pcount:hover{border-color:#8aa9ff;background:linear-gradient(180deg,#6997ff,#4d78dc);transform:translateY(-2px)}
+  #start .pcount:nth-child(2):hover{background:#2b313d;border-color:#667086}
+  #start .mini-proof{display:flex;gap:18px;flex-wrap:wrap;color:#7f899d;font-size:12px}
+  #start .mini-proof span{display:flex;align-items:center;gap:6px}
+  #start .mini-proof i{width:5px;height:5px;background:#5fc08a;border-radius:50%;display:inline-block}
+
+  #start .hero-visual{position:relative;min-height:430px;display:grid;place-items:center}
+  #start .visual-glow{position:absolute;width:330px;height:330px;border-radius:50%;background:rgba(91,140,255,.09);filter:blur(12px);border:1px solid rgba(91,140,255,.10)}
+  #start .deck-stage{position:relative;width:390px;height:390px}
+  #start .demo-card{position:absolute;width:205px;height:284px;border-radius:18px;padding:18px;background:linear-gradient(160deg,#252c3b,#171c27 78%);border:1px solid #39445a;box-shadow:0 28px 70px rgba(0,0,0,.44);transform-origin:50% 90%;overflow:hidden}
+  #start .demo-card:before{content:"";position:absolute;inset:0 0 auto;height:4px;background:var(--c)}
+  #start .demo-card.c1{--c:var(--atk);left:18px;top:60px;transform:rotate(-12deg)}
+  #start .demo-card.c2{--c:var(--def);left:95px;top:30px;transform:rotate(1deg);z-index:2}
+  #start .demo-card.c3{--c:var(--sur);left:166px;top:69px;transform:rotate(12deg)}
+  #start .card-topline{display:flex;align-items:center;justify-content:space-between;color:#909bb0;font-size:10px}
+  #start .demo-cost{width:31px;height:31px;border-radius:9px;background:#0e1118;border:1px solid #3b4557;display:grid;place-items:center;color:var(--gold);font-size:15px;font-weight:900}
+  #start .demo-name{font-size:25px;font-weight:900;color:#fff;margin-top:30px;letter-spacing:-1px}
+  #start .demo-card p{color:#909bb0;font-size:12px;line-height:1.65;margin-top:13px}
+  #start .demo-tag{position:absolute;left:18px;bottom:18px;font-size:10px;color:var(--c);border:1px solid color-mix(in srgb,var(--c) 45%,transparent);padding:4px 7px;border-radius:999px;background:color-mix(in srgb,var(--c) 8%,transparent)}
+  #start .hp-chip{position:absolute;right:6px;bottom:38px;z-index:5;background:rgba(14,17,24,.95);border:1px solid #3a4559;border-radius:14px;padding:13px 15px;width:178px;box-shadow:0 14px 35px rgba(0,0,0,.34)}
+  #start .hp-chip-top{display:flex;justify-content:space-between;color:#d9dfeb;font-size:11px;font-weight:700;margin-bottom:8px}
+  #start .hp-mini{height:8px;border-radius:999px;background:#202633;overflow:hidden}
+  #start .hp-mini span{display:block;width:67%;height:100%;background:linear-gradient(90deg,#3f9e6a,#5fc08a);border-radius:inherit}
+  #start .hp-chip small{display:block;margin-top:8px;color:#7d8799;font-size:9.5px}
+
+  #start .section{padding:54px 0;border-top:1px solid rgba(255,255,255,.055)}
+  #start .section-head{display:flex;align-items:end;justify-content:space-between;gap:30px;margin-bottom:27px}
+  #start .section-kicker{color:var(--gold);font-size:11px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;margin-bottom:8px}
+  #start .section h2{font-size:32px;letter-spacing:-1.3px;margin:0;color:#fff}
+  #start .section-head p{margin:0;color:#7f899d;font-size:13px;max-width:480px;line-height:1.7}
+  #start .feature-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  #start .feature{border:1px solid var(--line);background:rgba(26,31,43,.66);border-radius:15px;padding:22px;min-height:190px;transition:.2s}
+  #start .feature:hover{transform:translateY(-3px);border-color:#44526a;background:#1c2230}
+  #start .feature-icon{width:38px;height:38px;border-radius:11px;background:#252c3a;border:1px solid #364157;display:grid;place-items:center;font-size:18px;margin-bottom:23px}
+  #start .feature h3{margin:0 0 8px;color:#fff;font-size:16px}
+  #start .feature p{margin:0;color:#8792a6;font-size:12.5px;line-height:1.7}
+
+  #start .proof-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  #start .proof{background:#171c26;padding:27px 24px}
+  #start .proof strong{display:block;color:#fff;font-size:30px;letter-spacing:-1px;line-height:1;margin-bottom:9px}
+  #start .proof span{color:#7f899d;font-size:11.5px;line-height:1.5}
+  #start .proof strong em{color:var(--gold);font-style:normal}
+
+  #start .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;counter-reset:step}
+  #start .step{position:relative;padding:23px 23px 25px 61px;border-left:1px solid #343d4f}
+  #start .step:before{counter-increment:step;content:"0" counter(step);position:absolute;left:0;top:18px;color:var(--gold);font-size:22px;font-weight:900}
+  #start .step h3{margin:0 0 8px;color:#fff;font-size:15px}
+  #start .step p{margin:0;color:#828da1;font-size:12.5px;line-height:1.65}
+
+  #start .final-cta{margin-top:58px;border:1px solid #38445a;border-radius:20px;padding:38px;background:linear-gradient(120deg,rgba(91,140,255,.11),rgba(232,197,106,.07));display:flex;align-items:center;justify-content:space-between;gap:28px}
+  #start .final-cta h2{font-size:29px;margin:0 0 8px;color:#fff;letter-spacing:-1px}
+  #start .final-cta p{margin:0;color:#8d98aa;font-size:13px}
+  #start .final-cta .pcount-row{flex-shrink:0}
+  #start .landing-footer{display:flex;justify-content:space-between;align-items:center;gap:20px;padding-top:30px;color:#697386;font-size:11px}
+  #start .landing-footer a{color:#8d98aa;text-decoration:none}
+  #start .landing-footer a:hover{color:#fff}
+
+  @media(max-width:900px){
+    #start .hero{grid-template-columns:1fr;padding-top:42px;gap:20px}
+    #start .hero-visual{min-height:380px;order:-1;display:none}
+    #start .feature-grid,#start .proof-grid{grid-template-columns:repeat(2,1fr)}
+    #start .steps{grid-template-columns:1fr}
+    #start .section-head{align-items:flex-start;flex-direction:column;gap:10px}
+    #start .final-cta{align-items:flex-start;flex-direction:column}
+  }
+  @media(max-width:620px){
+    #start .landing{padding:0 16px 32px}
+    #start .landing-nav{height:64px}
+    #start .nav-links a:not(.github-link){display:none}
+    #start .hero{padding:38px 0 52px}
+    #start .hero h1{font-size:46px;letter-spacing:-2.8px}
+    #start .hero-copy{font-size:15px}
+    #start .pcount-row{width:100%;flex-direction:column}
+    #start .pcount{width:100%;min-width:0}
+    #start .feature-grid,#start .proof-grid{grid-template-columns:1fr}
+    #start .feature{min-height:auto}
+    #start .section{padding:42px 0}
+    #start .section h2{font-size:26px}
+    #start .proof-grid{gap:1px}
+    #start .final-cta{padding:27px 22px;margin-top:40px}
+    #start .landing-footer{align-items:flex-start;flex-direction:column}
+  }
+</style>
 </head>
 <body>
 
 <div id="start">
-  <div class="start-inner">
-    <h1>📜 37 게임</h1>
-    <p class="sub">규칙서 v2.12 · 덱 37장 · 시작 HP 20 · 10라운드</p>
-    <p class="desc">HP는 생명력이자 카드 사용 비용입니다.<br>
-       10라운드 종료 시 HP가 가장 높은 플레이어가 승리합니다.</p>
-    <div class="pcount-row">
-      <button class="pcount" data-n="3">3인전 시작<small>나 + AI 2명</small></button>
-      <button class="pcount" data-n="4">4인전 시작<small>나 + AI 3명</small></button>
-    </div>
-  </div>
+  <main class="landing">
+    <nav class="landing-nav" aria-label="메인 탐색">
+      <a class="brand" href="#top" aria-label="37 게임 홈">
+        <span class="brand-mark">37</span>
+        <span class="brand-copy">37 GAME<small>STRATEGY CARD GAME</small></span>
+      </a>
+      <div class="nav-links">
+        <a href="#features">게임 특징</a>
+        <a href="#proof">검증</a>
+        <a class="github-link" href="https://github.com/Kahkim/sj37" target="_blank" rel="noopener">GitHub ↗</a>
+      </div>
+    </nav>
+
+    <section class="hero" id="top">
+      <div>
+        <span class="eyebrow"><span class="eyebrow-dot"></span> RULEBOOK v2.12 · BROWSER GAME</span>
+        <h1>HP를 써서,<br><em>끝까지 살아남아라.</em></h1>
+        <p class="hero-copy">
+          <b>37장의 카드</b>와 단 하나의 자원, HP. 카드를 강하게 쓸수록 생존은 어려워집니다.
+          공격·방어·생존·교란을 조합해 10라운드 끝에 가장 높은 HP를 남기세요.
+        </p>
+        <div class="pcount-row hero-actions">
+          <button class="pcount" data-n="3">3인전 시작<small>나 + AI 2명</small></button>
+          <button class="pcount" data-n="4">4인전 시작<small>나 + AI 3명</small></button>
+        </div>
+        <div class="mini-proof">
+          <span><i></i> 설치 없음</span>
+          <span><i></i> PC · 모바일 지원</span>
+          <span><i></i> 빌드·로그인 없음</span>
+        </div>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <div class="visual-glow"></div>
+        <div class="deck-stage">
+          <article class="demo-card c1">
+            <div class="card-topline"><span class="demo-cost">4</span><span>공격</span></div>
+            <div class="demo-name">지옥</div>
+            <p>높은 대가를 치르고 상대에게 강한 압박을 가합니다.</p>
+            <span class="demo-tag">OFFENSE</span>
+          </article>
+          <article class="demo-card c2">
+            <div class="card-topline"><span class="demo-cost">2</span><span>방어</span></div>
+            <div class="demo-name">관문</div>
+            <p>상대의 카드 효과를 끊어내고 다음 선택을 준비합니다.</p>
+            <span class="demo-tag">DEFENSE</span>
+          </article>
+          <article class="demo-card c3">
+            <div class="card-topline"><span class="demo-cost">3</span><span>생존</span></div>
+            <div class="demo-name">불사조</div>
+            <p>위기의 순간, 생존 가능성을 다시 만들어 냅니다.</p>
+            <span class="demo-tag">SURVIVAL</span>
+          </article>
+          <div class="hp-chip">
+            <div class="hp-chip-top"><span>PLAYER HP</span><span>13 / 20</span></div>
+            <div class="hp-mini"><span></span></div>
+            <small>HP = 생명력 + 카드 사용 비용</small>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">Core Mechanics</div>
+          <h2>간단하게 시작하고, 선택은 깊게.</h2>
+        </div>
+        <p>규칙의 중심은 하나입니다. 강한 카드를 쓰면 HP가 줄어듭니다. 지금의 이득과 마지막 라운드의 생존 사이에서 매 턴 선택해야 합니다.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature"><div class="feature-icon">🂠</div><h3>37장 단일 덱</h3><p>모든 플레이어가 같은 덱을 공유합니다. 드로우와 버림 더미의 흐름까지 전략의 일부가 됩니다.</p></article>
+        <article class="feature"><div class="feature-icon">♥</div><h3>HP가 곧 비용</h3><p>카드 사용에 별도 마나가 없습니다. 더 강하게 움직일수록 내 생존 여력도 함께 줄어듭니다.</p></article>
+        <article class="feature"><div class="feature-icon">⚔</div><h3>3~4인 AI 대전</h3><p>사람 1명과 AI 2~3명이 맞붙습니다. 공격, 회복, 견제와 순위 경쟁이 동시에 일어납니다.</p></article>
+        <article class="feature"><div class="feature-icon">☠</div><h3>데스매치</h3><p>10라운드 종료 시 공동 1위라면 승부가 끝나지 않습니다. HP 10으로 다시 맞붙어 최후의 1인을 가립니다.</p></article>
+      </div>
+    </section>
+
+    <section class="section" id="proof">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">Tested & Tuned</div>
+          <h2>규칙 구현과 밸런스를 반복 검증했습니다.</h2>
+        </div>
+        <p>브라우저 단위 검증, AI 자동 대전, 화면 폭별 자동 테스트와 밸런스 시뮬레이션을 통해 게임 상태와 UI를 확인했습니다.</p>
+      </div>
+      <div class="proof-grid">
+        <div class="proof"><strong><em>78</em> / 78</strong><span>규칙 조항별 단위 검증 통과</span></div>
+        <div class="proof"><strong>40 games</strong><span>AI 자동 대전 · 오류 0건</span></div>
+        <div class="proof"><strong>360px</strong><span>모바일 최소 폭 대응</span></div>
+        <div class="proof"><strong>1 : <em>2.86</em></strong><span>데스매치 : 조기종료 측정 비율</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">How to Play</div>
+          <h2>클릭 몇 번이면 바로 시작합니다.</h2>
+        </div>
+      </div>
+      <div class="steps">
+        <article class="step"><h3>인원 선택</h3><p>3인전 또는 4인전을 선택하면 즉시 게임이 시작됩니다. 별도 설치나 계정 생성은 없습니다.</p></article>
+        <article class="step"><h3>드로우 & 플레이</h3><p>매 턴 카드 1장을 뽑고 원하는 만큼 사용합니다. 카드 사용 비용은 내 HP에서 직접 지불합니다.</p></article>
+        <article class="step"><h3>10라운드 생존</h3><p>마지막에 가장 높은 HP를 남긴 플레이어가 승리합니다. 공동 1위라면 데스매치가 이어집니다.</p></article>
+      </div>
+    </section>
+
+    <section class="final-cta">
+      <div>
+        <h2>37장의 선택, 한 번의 승리.</h2>
+        <p>브라우저에서 바로 시작하세요. 첫 판이면 3인전을 추천합니다.</p>
+      </div>
+      <div class="pcount-row">
+        <button class="pcount" data-n="3">3인전 시작<small>빠르게 익히기</small></button>
+        <button class="pcount" data-n="4">4인전 시작<small>더 복잡한 경쟁</small></button>
+      </div>
+    </section>
+
+    <footer class="landing-footer">
+      <span>37 GAME · Rulebook v2.12 · Built for modern browsers</span>
+      <a href="https://github.com/Kahkim/sj37" target="_blank" rel="noopener">github.com/Kahkim/sj37 ↗</a>
+    </footer>
+  </main>
 </div>
 
 <div id="board" hidden>
