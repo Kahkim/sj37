@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>37 게임 모바일 레이아웃 확인</title>
+<style>
+  body{margin:0;background:#0a0c11;color:#8b95a9;
+       font-family:system-ui,"Malgun Gothic",sans-serif;padding:14px}
+  .row{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+  .dev{display:flex;flex-direction:column;gap:6px;align-items:center}
+  .lbl{font-size:12px}
+  iframe{border:6px solid #2e3646;border-radius:22px;background:#12151c;display:block}
+</style>
+</head>
+<body>
+<!-- 헤드리스 Chrome은 창을 ~489px 아래로 줄이지 못하므로,
+     iframe 안에서 실제 모바일 폭의 뷰포트를 만들어 미디어 쿼리를 검증합니다. -->
+<div class="row">
+  <div class="dev"><span class="lbl">390 × 780 (iPhone 급)</span>
+    <iframe src="../index.html?fxdemo" width="390" height="780"></iframe></div>
+  <div class="dev"><span class="lbl">360 × 780 (소형 안드로이드)</span>
+    <iframe src="../index.html?fxdemo" width="360" height="780"></iframe></div>
+</div>
+</body>
+</html>

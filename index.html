@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>37 게임</title>
+<meta name="description" content="HP가 곧 카드 사용 비용인 37장 덱 카드 게임. 10라운드 종료 시 HP가 가장 높은 플레이어가 승리합니다.">
+<meta name="theme-color" content="#12151c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta property="og:type" content="website">
+<meta property="og:title" content="37 게임">
+<meta property="og:description" content="HP가 곧 카드 사용 비용인 37장 덱 카드 게임. 3~4인전, AI 상대와 바로 플레이.">
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%23e8c56a"/><text x="32" y="46" font-size="34" font-weight="bold" text-anchor="middle" font-family="sans-serif" fill="%231b1b1b">37</text></svg>'>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="start">
+  <div class="start-inner">
+    <h1>📜 37 게임</h1>
+    <p class="sub">규칙서 v2.12 · 덱 37장 · 시작 HP 20 · 10라운드</p>
+    <p class="desc">HP는 생명력이자 카드 사용 비용입니다.<br>
+       10라운드 종료 시 HP가 가장 높은 플레이어가 승리합니다.</p>
+    <div class="pcount-row">
+      <button class="pcount" data-n="3">3인전 시작<small>나 + AI 2명</small></button>
+      <button class="pcount" data-n="4">4인전 시작<small>나 + AI 3명</small></button>
+    </div>
+  </div>
+</div>
+
+<div id="board" hidden>
+  <header>
+    <div class="h-left">
+      <span class="logo">37</span>
+      <span id="roundInfo">라운드 1 / 10</span>
+    </div>
+    <div id="pileInfo"></div>
+    <div class="h-right">
+      <label>속도
+        <select id="speedSel">
+          <option value="2000">느리게</option>
+          <option value="1200" selected>보통</option>
+          <option value="600">빠르게</option>
+          <option value="60">즉시</option>
+        </select>
+      </label>
+      <button id="rulesBtn" class="btn small">규칙</button>
+    </div>
+  </header>
+
+  <div id="rules" hidden>
+    <h3>기본 규칙 요약</h3>
+    <ul>
+      <li><b>HP</b>는 생명력이자 카드 사용 비용. 회복은 최대 20까지. HP가 부족하면 카드를 쓸 수 없습니다.</li>
+      <li><b>턴</b>: 카드 1장 드로우 → 원하는 만큼 카드 사용 → 턴 종료. 같은 턴에 같은 이름의 카드는 사용 불가.</li>
+      <li><b>처리 순서</b>: 비용 지불 → 사용 선언 → 효과 해결 → 버림/소멸. 무효가 되어도 비용은 반환되지 않습니다.</li>
+      <li><b>자기소멸 예외</b>: 비용 지불로 HP가 0 이하가 되어도 그 카드가 즉시 HP를 1 이상으로 회복시키면 탈락하지 않습니다.</li>
+      <li><b>피해 감소</b>는 합산되며 최종 피해는 0 미만이 되지 않습니다. 지속 피해도 감소 효과를 받습니다.</li>
+      <li><b>승리</b>: 10라운드 종료 시 HP 1위. 공동 1위면 <b>데스매치</b>(HP 10, 모든 지속 효과 취소, 최후의 1인까지).</li>
+      <li><b>조기 종료</b>: 1명만 남으면 즉시 그 플레이어의 승리.</li>
+      <li><b>덱 재구성</b>: 덱이 소진되면 버린 카드 더미를 섞어 새 덱을 만듭니다(소멸 카드 제외).</li>
+      <li><b>10라운드 종료 시</b> 남아있는 모든 이월 피해·지연 효과(처벌의 처형 조건, 피의 디버프 등)를 즉시 처리합니다.</li>
+    </ul>
+  </div>
+
+  <div id="opponents"></div>
+
+  <div id="myPanel" data-idx="0"></div>
+  <div id="hand"></div>
+
+  <div id="controls">
+    <button id="endTurnBtn" class="btn primary big" disabled>턴 종료</button>
+  </div>
+
+  <div id="log"></div>
+</div>
+
+<div id="fx"></div>
+<div id="toast" hidden></div>
+<div id="hint" hidden></div>
+
+<div id="modal" hidden>
+  <div class="m-box"><div id="modalBody"></div></div>
+</div>
+
+<script src="js/cards.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>37 게임 규칙 검증</title></head>
+<body>
+<pre id="out">running...</pre>
+
+<script src="../js/cards.js"></script>
+<script src="../js/game.js"></script>
+<script src="../js/ai.js"></script>
+<script>
+/* 규칙서 조항별 단위 검증 */
+const results = [];
+const errs = [];
+window.onerror = (m,s,l,c) => errs.push(`onerror: ${m} @${l}:${c}`);
+window.addEventListener('unhandledrejection', e => errs.push('unhandled: ' + (e.reason && e.reason.stack || e.reason)));
+
+const UI = { render(){}, onLog(){}, gameOver(){}, humanTurn(){ return Promise.resolve(); } };
+
+let answers = [];
+G.io = { ask(spec){
+  if (answers.length) return answers.shift();
+  switch (spec.kind){
+    case 'confirm': return false;
+    case 'players': return spec.list.slice(0, spec.count);
+    case 'options': { const a = spec.list.filter(o=>!o.disabled); return (a[0]||spec.list[0]).value; }
+    case 'cards':   return spec.list.slice(0, spec.count);
+  }
+} };
+
+function setup(n){
+  n = n || 2;
+  G.players = [];
+  for (let i=0;i<n;i++) G.players.push(makePlayer(i, 'P'+(i+1), false));
+  G.deck = shuffle(CARDS.map(c => ({ ...c })));
+  G.discard = []; G.exiled = []; G.carried = [];
+  G.round = 1; G.eclipse = 0; G.over = false; G.winner = null;
+  G.deathmatch = false; G.log = []; G.playedNames = new Set();
+  G.order = G.players.map(p => p.idx); G.speed = 0;
+  answers = [];
+  return G.players;
+}
+function give(p, id){
+  const i = G.deck.findIndex(c => c.id === id);
+  const c = i >= 0 ? G.deck.splice(i,1)[0] : { ...CARD_BY_ID[id] };
+  p.hand.push(c);
+  return c;
+}
+function eq(name, got, want){
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  results.push({ name, ok, got, want });
+}
+function is(name, cond, detail){ results.push({ name, ok:!!cond, got:detail === undefined ? cond : detail, want:'true' }); }
+
+const T = [];
+const test = (name, fn) => T.push({ name, fn });
+
+/* ---------- 1. 기본 피해와 비용 ---------- */
+test('총: 비용 1 지불, 대상에게 피해 2', async () => {
+  const [a,b] = setup(2);
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  eq('  사용자 HP', a.hp, 19);
+  eq('  대상 HP', b.hp, 18);
+  eq('  버린 더미 맨 위', G.discard[0].id, 'gun');
+});
+
+/* ---------- 2. 동일 턴 같은 이름 카드 제한 ---------- */
+test('동일 턴 제한: 같은 이름의 카드 재사용 불가', async () => {
+  const [a,b] = setup(2);
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  const dup = { ...CARD_BY_ID.gun };
+  a.hand.push(dup);
+  eq('  거부 사유', whyCannot(a, dup), '같은 턴에 같은 이름의 카드 사용 불가');
+});
+
+/* ---------- 3. 카타나: 방어 카드 피해 감소 무시 ---------- */
+test('카타나: 비/행운의 감소를 무시하고 피해 3', async () => {
+  const [a,b] = setup(2);
+  b.st.rain = true; b.st.fortune = 3;
+  await playCard(a, give(a,'katana'), { targets:[b] });
+  eq('  대상 HP (20-3)', b.hp, 17);
+  eq('  행운 횟수 미소모', b.st.fortune, 3);
+});
+
+/* ---------- 4. 피해 감소 합산, 최종 피해 0 미만 불가 ---------- */
+test('피해 감소 합산: 비1 + 행운1 로 피해 2 → 0', async () => {
+  const [a,b] = setup(2);
+  b.st.rain = true; b.st.fortune = 1;
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  eq('  대상 HP', b.hp, 20);
+  eq('  행운 소모', b.st.fortune, 0);
+});
+
+/* ---------- 5. 불멸 ---------- */
+test('불멸: 상대 카드 효과로 HP가 1 미만이 되지 않음', async () => {
+  const [a,b] = setup(2);
+  b.hp = 3; b.st.immortal = true;
+  await playCard(a, give(a,'netherworld'), { targets:[b] });
+  eq('  대상 HP', b.hp, 1);
+  is('  생존', b.alive);
+  eq('  사용자 자해 2 적용', a.hp, 20 - 4 - 2);
+});
+
+/* ---------- 6. 불사조 ---------- */
+test('불사조: HP 0 이하 시 1회 한정 HP 5 복구', async () => {
+  const [a,b] = setup(2);
+  b.hp = 4; b.st.phoenix = true;
+  await playCard(a, give(a,'netherworld'), { targets:[b] });
+  eq('  대상 HP', b.hp, 5);
+  is('  생존', b.alive);
+  is('  불사조 소진', b.st.phoenix === false);
+});
+
+/* ---------- 7. 자기소멸 예외 ---------- */
+test('자기소멸 예외: 비용으로 HP 0 → 즉시 회복되면 탈락하지 않음', async () => {
+  const [a,b] = setup(2);
+  a.hp = 2;
+  await playCard(a, give(a,'diamond'), { targets:[] });
+  is('  생존', a.alive);
+  eq('  HP (0 → +5)', a.hp, 5);
+});
+
+/* ---------- 8. 금화 HP 1 제한 ---------- */
+test('금화: HP가 1일 때는 사용 불가', async () => {
+  const [a] = setup(2);
+  a.hp = 1;
+  eq('  거부 사유', whyCannot(a, give(a,'gold')), 'HP가 1일 때는 사용 불가');
+});
+
+/* ---------- 9. 일식 추가 비용 ---------- */
+test('일식: 생존 카드 비용 +1', async () => {
+  const [a] = setup(2);
+  G.eclipse = G.round + 1;
+  eq('  금화 비용', costOf(a, CARD_BY_ID.gold), 2);
+  eq('  총 비용(공격 카드는 영향 없음)', costOf(a, CARD_BY_ID.gun), 1);
+});
+
+/* ---------- 10. 비용 계산 순서 (감소 먼저, 추가 비용 나중) ---------- */
+test('비용 계산: 감소를 모두 적용한 뒤 추가 비용 계산', async () => {
+  const [a] = setup(2);
+  G.eclipse = G.round + 1;
+  a.st.night = 6;                       // 비용 -2
+  eq('  금화 = max(0, 1-2) + 1', costOf(a, CARD_BY_ID.gold), 1);
+});
+
+/* ---------- 11. 전쟁 ---------- */
+test('전쟁: 공격 피해 +2, 전쟁 제외 공격 카드 최대 2회', async () => {
+  const [a,b] = setup(2);
+  await playCard(a, give(a,'warfare'), { targets:[] });
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  eq('  총 피해 2+2', b.hp, 16);
+  await playCard(a, give(a,'katana'), { targets:[b] });
+  eq('  카타나 3+2', b.hp, 11);
+  const third = give(a,'zombie');
+  eq('  3번째 공격 거부', whyCannot(a, third), '「전쟁」 제한: 이번 턴 공격 카드 2회 소진');
+});
+
+/* ---------- 12. 관문 ---------- */
+test('관문: 자신을 대상으로 하는 상대 카드 1장 효과 무효', async () => {
+  const [a,b] = setup(2);
+  b.st.gate = true;
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  eq('  피해 없음', b.hp, 20);
+  is('  관문 소진', b.st.gate === false);
+  eq('  비용은 반환되지 않음', a.hp, 19);
+});
+
+/* ---------- 13. 훈색 ---------- */
+test('훈색: 공격 카드 효과를 다음 라운드로 이월', async () => {
+  const [a,b] = setup(2);
+  b.st.iridescence = true;
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  eq('  이번 라운드 피해 없음', b.hp, 20);
+  eq('  이월 대기 1건', G.carried.length, 1);
+  G.round = 2; roundStart();
+  eq('  다음 라운드에 피해 2', b.hp, 18);
+  eq('  이월 소진', G.carried.length, 0);
+});
+
+/* ---------- 14. 실안개 (함정) ---------- */
+test('실안개: 공격 선언 직후 발동 → 공격자에게 피해 4, 원래 공격은 정상 해결', async () => {
+  const [a,b] = setup(2);
+  give(b,'haze');
+  answers = [true];
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  eq('  공격자 HP (20-1-4)', a.hp, 15);
+  eq('  방어자 HP (20-2비용-2피해)', b.hp, 16);
+  is('  능동 사용 불가', whyCannot(b, CARD_BY_ID.haze) === '함정 카드 (능동 사용 불가)');
+});
+
+/* ---------- 15. 처벌: 처형 집행 ---------- */
+test('처벌: 조건 충족 시 대상의 다음 턴 종료 직후 탈락', async () => {
+  const [a,b] = setup(2);
+  b.hp = 7;
+  ['gun','rain','piper','path'].forEach(id => give(b,id));
+  await playCard(a, give(a,'punishment'), { targets:[b] });
+  is('  선고됨', !!b.st.punish);
+  eq('  선고 당시 HP 기록', b.st.punish.sentenceHP, 7);
+  beginTurn(b); endTurn(b);
+  is('  처형 집행', b.alive === false);
+});
+
+/* ---------- 16. 처벌: 조건 이탈 시 회피 ---------- */
+test('처벌: 다음 턴 종료 시 조건을 벗어나면 처형되지 않음', async () => {
+  const [a,b] = setup(2);
+  b.hp = 7;
+  ['gun','rain','piper','path','diamond'].forEach(id => give(b,id));
+  await playCard(a, give(a,'punishment'), { targets:[b] });
+  beginTurn(b);
+  await playCard(b, b.hand.find(c => c.id === 'diamond'), { targets:[] });
+  endTurn(b);
+  is('  생존 (HP 7 초과)', b.alive === true, 'HP ' + b.hp);
+});
+
+/* ---------- 17. 피: 다음 라운드부터 2라운드 동안 ---------- */
+test('피: 다음 라운드 시작부터 2라운드 동안 라운드 종료 시 피해 2', async () => {
+  const [a,b] = setup(2);
+  await playCard(a, give(a,'blood'), { targets:[b] });
+  await roundEnd();                       // 라운드 1 종료 → 발동 안 함
+  eq('  R1 종료 후 HP', b.hp, 20);
+  G.round = 2; await roundEnd();
+  eq('  R2 종료 후 HP', b.hp, 18);
+  G.round = 3; await roundEnd();
+  eq('  R3 종료 후 HP', b.hp, 16);
+  G.round = 4; await roundEnd();
+  eq('  R4 종료 후 HP (종료됨)', b.hp, 16);
+});
+
+/* ---------- 18. 꽃: 지속 피해 감소 ---------- */
+test('꽃: 지속 피해도 감소 효과를 적용받음', async () => {
+  const [a,b] = setup(2);
+  b.st.flower = true;
+  await playCard(a, give(a,'blood'), { targets:[b] });
+  G.round = 2; await roundEnd();
+  eq('  지속 피해 2 → 1', b.hp, 19);
+});
+
+/* ---------- 19. 덱 재구성 (소멸 카드 제외) ---------- */
+test('덱 재구성: 버린 더미를 섞어 새 덱, 소멸 카드는 제외', async () => {
+  const [a] = setup(2);
+  const exiledCard = G.deck.splice(0,1)[0];
+  const discarded  = G.deck.splice(0,2);
+  G.deck = [];
+  G.exiled = [exiledCard];
+  G.discard = discarded;
+  draw(a, 1, true);
+  eq('  버린 더미에서 드로우', a.hand.length, 1);
+  is('  소멸 카드는 덱에 없음', !G.deck.some(c => c.id === exiledCard.id) && a.hand[0].id !== exiledCard.id);
+  eq('  소멸 더미 유지', G.exiled.length, 1);
+});
+
+/* ---------- 20. 데스매치 ---------- */
+test('데스매치: 공동 1위만 생존, HP 10, 지속 효과 취소, 손패 유지', async () => {
+  const [a,b,c] = setup(3);
+  a.hp = 15; b.hp = 15; c.hp = 9;
+  give(a,'gun'); give(b,'rain');
+  a.st.rain = true; b.st.blood = [{from:1,left:2,src:2}];
+  finishMainGame();
+  is('  데스매치 진입', G.deathmatch === true);
+  eq('  생존자 수', alive().length, 2);
+  eq('  P1 HP', a.hp, 10);
+  eq('  P2 HP', b.hp, 10);
+  is('  3위 탈락', c.alive === false);
+  is('  지속 효과 취소', a.st.rain === false && b.st.blood.length === 0);
+  eq('  손패 유지', a.hand.length, 1);
+});
+
+/* ---------- 21. 좀비 강제 사용 ---------- */
+test('좀비: 드로우한 카드는 사용 가능한 첫 기회에 반드시 사용', async () => {
+  const [a,b] = setup(2);
+  G.deck.unshift({ ...CARD_BY_ID.piper });   // 반드시 드로우될 카드
+  await playCard(a, give(a,'zombie'), { targets:[b] });
+  eq('  대상 피해 2', b.hp, 18);
+  eq('  강제 사용 대기', pendingMustUse(a).map(c=>c.id), ['piper']);
+  eq('  좀비는 덱 맨 아래로', G.deck[G.deck.length-1].id, 'zombie');
+});
+
+/* ---------- 22. 대상 불가 / 처리 불가 ---------- */
+test('대상 불가: 비용은 지불되고 효과만 적용되지 않음', async () => {
+  const [a,b] = setup(2);
+  b.hand = [];
+  await playCard(a, give(a,'paranoia'), { targets:[b] });
+  eq('  비용 지불됨', a.hp, 18);
+  eq('  대상 손패 변화 없음', b.hand.length, 0);
+});
+
+/* ---------- 23. 복사 효과는 재복사 불가 ---------- */
+test('복사 효과: 복사한 효과는 다시 다른 효과를 복사할 수 없음', async () => {
+  const [a,b] = setup(2);
+  G.discard = [{ ...CARD_BY_ID.skeleton }, { ...CARD_BY_ID.gun }];
+  const before = b.hp;
+  await playCard(a, give(a,'skeleton'), { targets:[] });
+  eq('  중첩 복사 차단(피해 없음)', b.hp, before);
+  is('  안내 로그', G.log.some(e => e.msg.includes('다시 다른 효과를 복사할 수 없습니다')));
+});
+
+/* ---------- 24. 낙원/샴페인: 다음 자신의 턴에 적용 ---------- */
+test('낙원·샴페인: 이번 턴이 아니라 다음 자신의 턴에 비용 감소', async () => {
+  const [a] = setup(2);
+  await playCard(a, give(a,'paradise'), { targets:[] });
+  eq('  이번 턴에는 감소 없음', costOf(a, CARD_BY_ID.katana), 4);
+  beginTurn(a);
+  eq('  다음 턴에는 -2', costOf(a, CARD_BY_ID.katana), 2);
+  const c = give(a,'katana');
+  await playCard(a, c, { targets:[G.players[1]] });
+  eq('  1장만 적용', costOf(a, CARD_BY_ID.gate), 3);
+});
+
+/* ---------- 25. 무효/소멸 처리 ---------- */
+test('소멸: 사용 후 게임에서 완전히 제외', async () => {
+  const [a] = setup(2);
+  await playCard(a, give(a,'immortal'), { targets:[] });
+  is('  소멸 더미로 이동', G.exiled.some(c => c.id === 'immortal'));
+  is('  버린 더미에는 없음', !G.discard.some(c => c.id === 'immortal'));
+});
+
+/* ---------- 26. 회복 상한 ---------- */
+test('회복: HP는 최대 20까지만 증가', async () => {
+  const [a] = setup(2);
+  a.hp = 19;
+  await playCard(a, give(a,'diamond'), { targets:[] });
+  eq('  HP 상한', a.hp, 20);
+});
+
+/* ---------- 27. 조기 종료 ---------- */
+test('조기 종료: 1명만 남으면 즉시 게임 종료', async () => {
+  const [a,b] = setup(2);
+  b.hp = 2;
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  is('  대상 탈락', b.alive === false);
+  is('  게임 종료', G.over === true);
+  eq('  승자', G.winner && G.winner.name, 'P1');
+});
+
+/* ---------- 28. 혼란 [선택 2] ---------- */
+test('혼란 [선택 2]: 지정 플레이어는 다음 라운드까지 공격/교란 중 하나 사용 불가', async () => {
+  const [a,b,c] = setup(3);
+  G.round = 2;                                    // 짝수 라운드 → 선택 2 강제
+  answers = ['offense', 'offense'];
+  await playCard(a, give(a,'confusion'), { targets:[] });
+  is('  P2 제한', b.st.ban && b.st.ban.kind === 'offense', b.st.ban);
+  eq('  공격 카드 거부', whyCannot(b, CARD_BY_ID.gun), '「혼란」으로 공격 카드 사용 불가');
+  eq('  다음 라운드까지', b.st.ban.until, 3);
+  G.round = 3; await roundEnd();
+  is('  R3 종료 후 해제', b.st.ban === null);
+});
+
+/* ---------- 29. 10라운드 종료 시 이월 피해 즉시 처리 ---------- */
+test('이월 피해 예외: 10라운드 종료 시 남은 이월/지연 효과 즉시 처리', async () => {
+  const [a,b] = setup(2);
+  G.round = 10;
+  b.st.iridescence = true;
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  eq('  이월 대기', G.carried.length, 1);
+  await roundEnd();
+  eq('  즉시 처리됨', G.carried.length, 0);
+  eq('  피해 반영', b.hp, 18);
+  is('  게임 종료', G.over === true);
+});
+
+/* ---------- 30. 무효가 되어도 비용 반환 없음 / 카드는 정상 처리 ---------- */
+test('무효: 비용 반환 없이 카드는 정상적으로 버려짐', async () => {
+  const [a,b] = setup(2);
+  b.st.gate = true;
+  await playCard(a, give(a,'katana'), { targets:[b] });
+  eq('  비용 4 지불', a.hp, 16);
+  is('  버린 더미로 이동', G.discard[0].id === 'katana');
+});
+
+/* ---------- 실행 ---------- */
+(async () => {
+  for (const t of T){
+    results.push({ header:t.name });
+    try { await t.fn(); }
+    catch (e){ results.push({ name:'  예외 발생', ok:false, got:String(e && e.stack || e), want:'-' }); }
+  }
+  const checks = results.filter(r => !r.header);
+  const failed = checks.filter(r => !r.ok);
+  const lines = results.map(r => r.header
+    ? `\n■ ${r.header}`
+    : `   ${r.ok ? '✔' : '✘'} ${r.name}` + (r.ok ? '' : `  → 결과: ${JSON.stringify(r.got)} / 기대: ${JSON.stringify(r.want)}`));
+  document.getElementById('out').textContent =
+    `=== 규칙 검증: ${checks.length - failed.length} / ${checks.length} 통과 ===\n` +
+    lines.join('\n') +
+    `\n\n--- 오류 (${errs.length}) ---\n${errs.join('\n') || '없음'}\n=== DONE ===`;
+})();
+</script>
+</body>
+</html>

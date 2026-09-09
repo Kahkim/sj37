@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>37 게임 밸런스 스윕</title></head>
+<body>
+<pre id="out">running...</pre>
+
+<script src="../js/cards.js"></script>
+<script src="../js/game.js"></script>
+<script src="../js/ai.js"></script>
+<script>
+/* AI.TUNE 값을 바꿔가며 "데스매치 : 조기종료" 발생 비율을 측정합니다.
+   모든 설정이 같은 시드 열을 쓰므로 설정 간 비교가 공정합니다. */
+const errs = [];
+window.onerror = (m,s,l,c) => errs.push(`onerror: ${m} @${l}:${c}`);
+window.addEventListener('unhandledrejection', e => errs.push('unhandled: ' + (e.reason && e.reason.stack || e.reason)));
+
+const UI = { render(){}, onLog(){}, gameOver(){}, humanTurn(p){ return AI.takeTurn(p); } };
+G.io = { ask(spec){
+  switch (spec.kind){
+    case 'confirm': return true;
+    case 'players': return spec.list.slice(0, spec.count);
+    case 'options': { const a = spec.list.filter(o=>!o.disabled); return (a[0]||spec.list[0]).value; }
+    case 'cards':   return spec.list.slice(0, spec.count);
+  }
+} };
+
+const Q     = s => (new RegExp(s + '=(\\d+)').exec(location.search) || [])[1];
+const GAMES = +Q('games') || 200;        // 설정당 게임 수 (?games=N)
+const SEED0 = +Q('seed')  || 1000;       // 시드 기준값 (?seed=N — 독립 반복 측정용)
+const BASE  = JSON.parse(JSON.stringify(AI.TUNE));
+
+async function measure(cfg){
+  G.speed = 0;                           // 연출 대기 제거 (가상시간 절약)
+  AI.tune(JSON.parse(JSON.stringify(BASE)));
+  AI.tune(cfg);
+  const r = { deathmatch:0, early:0, normal:0, none:0, winnerHp:[], rounds:[] };
+  for (let i = 0; i < GAMES; i++){
+    document.getElementById('out').textContent =
+      `진행 ${i}/${GAMES}  (가상시간 ${performance.now().toFixed(0)}ms)`;
+    setSeed(SEED0 + i * 7919);           // 설정마다 동일한 시드 열
+    await startGame(i % 2 ? 4 : 3, 'P1');
+    if (G.deathmatch) r.deathmatch++;
+    else if (G.round < 10) r.early++;
+    else r.normal++;
+    if (!G.winner) r.none++;
+    else r.winnerHp.push(G.winner.hp);
+    r.rounds.push(G.round);
+  }
+  r.ratio = r.deathmatch ? (r.early / r.deathmatch) : Infinity;
+  r.avgHp = r.winnerHp.reduce((a,b)=>a+b,0) / (r.winnerHp.length || 1);
+  return r;
+}
+
+const CONFIGS = [
+  ['tieBreak 0',            { tieBreak:0 }],
+  ['tieBreak 6',            { tieBreak:6 }],
+  ['tieBreak 12',           { tieBreak:12 }],
+  ['tieBreak 20',           { tieBreak:20 }],
+  ['tieBreak 30',           { tieBreak:30 }],
+  ['tieBreak 45',           { tieBreak:45 }],
+  ['tie20+공격2.3/1.6',     { tieBreak:20, atkDmg:2.3, atkCost:1.6 }],
+  ['tie30+공격2.3/1.6',     { tieBreak:30, atkDmg:2.3, atkCost:1.6 }]
+];
+
+/* ?cfg=N 으로 설정 1개만 측정 (헤드리스에서 가상시간 예산 초과를 피하려고 분할 실행).
+   ?cfg 없이 열면 브라우저에서 전체를 순서대로 돌립니다. */
+function row(name, r){
+  return name.padEnd(16) +
+    String(r.deathmatch).padStart(6) +
+    String(r.early).padStart(10) +
+    String(r.normal).padStart(9) +
+    r.ratio.toFixed(2).padStart(14) +
+    r.avgHp.toFixed(1).padStart(12) +
+    (r.none ? `   (무승부 ${r.none})` : '');
+}
+const HEAD = '설정            데스매치  조기종료  10R정상  비율(조기/데매)  승자평균HP';
+
+(async () => {
+  const out = document.getElementById('out');
+  const m = /cfg=(\d+)/.exec(location.search);
+  if (m){
+    const i = +m[1];
+    const [name, cfg] = CONFIGS[i];
+    const r = await measure(cfg);
+    out.textContent = `ROW|${row(name, r)}|ERR=${errs.length}\n=== DONE ===`;
+    return;
+  }
+  const lines = [`설정당 ${GAMES}게임 (3인전/4인전 교대, 설정 간 동일 시드)`,
+                 '목표: 조기종료 / 데스매치 = 3.0', '', HEAD, '─'.repeat(78)];
+  for (const [name, cfg] of CONFIGS){
+    lines.push(row(name, await measure(cfg)));
+    out.textContent = lines.join('\n');
+  }
+  out.textContent = lines.join('\n') + `\n\n--- 오류 (${errs.length}) ---\n` +
+                    (errs.slice(0,10).join('\n') || '없음') + '\n=== DONE ===';
+})();
+</script>
+</body>
+</html>

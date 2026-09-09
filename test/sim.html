@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>37 게임 시뮬레이터</title></head>
+<body>
+<pre id="out">running...</pre>
+
+<script src="../js/cards.js"></script>
+<script src="../js/game.js"></script>
+<script src="../js/ai.js"></script>
+<script>
+/* 전 플레이어를 AI로 돌려 규칙 엔진을 검증하는 헤드리스 시뮬레이터 */
+const errors = [];
+window.onerror = (m, s, l, c, e) => { errors.push('window.onerror: ' + m + ' @' + l + ':' + c); };
+window.addEventListener('unhandledrejection', e => errors.push('unhandled: ' + (e.reason && e.reason.stack || e.reason)));
+
+const UI = {
+  render(){}, onLog(){}, gameOver(){},
+  humanTurn(p){ return AI.takeTurn(p); }        // 사람 자리도 AI가 대신 플레이
+};
+
+G.io = {
+  ask(spec){
+    switch (spec.kind){
+      case 'confirm': return true;
+      case 'players': return spec.list.slice(0, spec.count);
+      case 'options': { const a = spec.list.filter(o => !o.disabled); return (a[0] || spec.list[0]).value; }
+      case 'cards':   return spec.list.slice(0, spec.count);
+    }
+    return null;
+  }
+};
+
+const stats = {
+  games:0, rounds:{}, winners:{}, deathmatch:0, earlyEnd:0, noWinner:0,
+  cardUse:{}, maxRound:0, invariant:[], winnerHp:[], r1hp:[]
+};
+
+// 라운드 1 종료 시점의 HP 분포 (AI가 초반에 HP를 과소비하는지 확인)
+const origRoundEnd = roundEnd;
+roundEnd = async function(){
+  if (G.round === 1 && !G.deathmatch) G.players.forEach(p => stats.r1hp.push(p.hp));
+  return origRoundEnd();
+};
+
+function checkInvariants(tag){
+  const seen = new Map();
+  const add = (c, where) => {
+    if (seen.has(c.id)) stats.invariant.push(`${tag}: 카드 중복 ${c.id} (${seen.get(c.id)} / ${where})`);
+    seen.set(c.id, where);
+  };
+  G.deck.forEach(c => add(c, 'deck'));
+  G.discard.forEach(c => add(c, 'discard'));
+  G.exiled.forEach(c => add(c, 'exiled'));
+  G.players.forEach(p => p.hand.forEach(c => add(c, 'hand:' + p.name)));
+  if (seen.size !== 37) stats.invariant.push(`${tag}: 카드 총량 ${seen.size} (37이어야 함)`);
+  G.players.forEach(p => {
+    if (p.hp > p.maxHp) stats.invariant.push(`${tag}: ${p.name} HP ${p.hp} > 최대`);
+    if (p.alive && p.hp <= 0) stats.invariant.push(`${tag}: ${p.name} 생존 중 HP ${p.hp}`);
+  });
+}
+
+// 카드 사용 횟수 집계용 후킹
+const origPlay = playCard;
+playCard = async function(p, card, opts){
+  const r = await origPlay(p, card, opts);
+  if (r) stats.cardUse[card.id] = (stats.cardUse[card.id] || 0) + 1;
+  return r;
+};
+
+async function runOne(n){
+  G.speed = 0;
+  await startGame(n, 'P1');
+  stats.games++;
+  stats.rounds[G.round] = (stats.rounds[G.round] || 0) + 1;
+  stats.maxRound = Math.max(stats.maxRound, G.round);
+  if (G.deathmatch) stats.deathmatch++;
+  if (G.winner){ stats.winners[G.winner.name] = (stats.winners[G.winner.name] || 0) + 1; stats.winnerHp.push(G.winner.hp); }
+  else stats.noWinner++;
+  if (!G.deathmatch && G.round < 10) stats.earlyEnd++;
+  checkInvariants('게임' + stats.games);
+}
+
+(async () => {
+  const t0 = performance.now();
+  try {
+    for (let i = 0; i < 40; i++) await runOne(i % 2 ? 4 : 3);
+  } catch (e){ errors.push('throw: ' + (e && e.stack || e)); }
+
+  const used = Object.keys(stats.cardUse).length;
+  const never = CARDS.filter(c => !stats.cardUse[c.id]).map(c => `${c.name}(${c.id})`);
+  document.getElementById('out').textContent =
+`=== 37 게임 시뮬레이션 결과 ===
+게임 수        : ${stats.games}
+소요           : ${((performance.now()-t0)/1000).toFixed(1)}s
+종료 라운드 분포: ${JSON.stringify(stats.rounds)}
+최대 라운드    : ${stats.maxRound}
+조기 종료      : ${stats.earlyEnd}
+데스매치 발생  : ${stats.deathmatch}
+R1 종료 평균 HP: ${(stats.r1hp.reduce((a,b)=>a+b,0)/stats.r1hp.length).toFixed(1)} (최저 ${Math.min(...stats.r1hp)})
+승자 평균 HP   : ${(stats.winnerHp.reduce((a,b)=>a+b,0)/stats.winnerHp.length).toFixed(1)}
+승자 없음      : ${stats.noWinner}
+승자 분포      : ${JSON.stringify(stats.winners)}
+
+사용된 카드 종류: ${used} / 37
+한 번도 사용 안 됨: ${never.length ? never.join(', ') : '없음'}
+카드별 사용 횟수: ${JSON.stringify(stats.cardUse)}
+
+--- 불변식 위반 (${stats.invariant.length}) ---
+${stats.invariant.slice(0, 30).join('\n') || '없음'}
+
+--- 오류 (${errors.length}) ---
+${errors.slice(0, 20).join('\n') || '없음'}
+=== DONE ===`;
+})();
+</script>
+</body>
+</html>
