@@ -366,6 +366,87 @@ test('무효: 비용 반환 없이 카드는 정상적으로 버려짐', async (
   is('  버린 더미로 이동', G.discard[0].id === 'katana');
 });
 
+/* ---------- 31. 처치 보너스 ---------- */
+test('처치 보너스: 탈락시킨 플레이어가 즉시 HP 회복', async () => {
+  const [a,b,c] = setup(3);
+  G.killBonus = 5;
+  a.hp = 10; b.hp = 2;
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  is('  대상 탈락', b.alive === false);
+  eq('  처치자 HP (10-1비용+5)', a.hp, 14);
+  eq('  무관한 플레이어는 변화 없음', c.hp, 20);
+});
+
+test('처치 보너스: 회복 상한 20을 넘지 않음', async () => {
+  const [a,b] = setup(3);
+  G.killBonus = 5;
+  a.hp = 19; b.hp = 2;
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  eq('  HP 상한', a.hp, 20);
+});
+
+test('처치 보너스: 비용 지불로 자멸하면 아무도 못 받음', async () => {
+  const [a,b,c] = setup(3);
+  G.killBonus = 5;
+  b.hp = 4;                                  // 카타나 비용 4 → HP 0
+  await playCard(b, give(b,'katana'), { targets:[c] });
+  is('  자멸', b.alive === false);
+  eq('  처치자 없음', b.killedBy, null);
+  eq('  다른 플레이어 HP 변화 없음', a.hp, 20);
+  eq('  피격자는 피해만', c.hp, 17);
+});
+
+test('처치 보너스: 같이 쓰러지면 받지 못함', async () => {
+  const [a,b,c] = setup(3);
+  G.killBonus = 5;
+  a.hp = 6; b.hp = 3;                        // 지옥: 비용 4 → HP 2, 자해 2 → HP 0
+  await playCard(a, give(a,'netherworld'), { targets:[b] });
+  is('  대상 탈락', b.alive === false);
+  is('  시전자도 탈락', a.alive === false);
+  is('  보너스로 살아나지 않음', a.hp <= 0, 'HP ' + a.hp);
+});
+
+test('처치 보너스: 처벌의 처형도 선고자에게 지급', async () => {
+  const [a,b,c] = setup(3);
+  G.killBonus = 5;
+  a.hp = 10; b.hp = 7;
+  ['gun','rain','piper','path'].forEach(id => give(b,id));
+  await playCard(a, give(a,'punishment'), { targets:[b] });
+  eq('  처벌 비용 6 지불', a.hp, 4);
+  beginTurn(b); endTurn(b);
+  is('  처형됨', b.alive === false);
+  eq('  선고자 HP (4+5)', a.hp, 9);
+});
+
+test('처치 보너스: 실안개 반격으로 처치해도 지급', async () => {
+  const [a,b,c] = setup(3);
+  G.killBonus = 5;
+  a.hp = 5; b.hp = 10;
+  give(b,'haze');
+  answers = [true];
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  is('  공격자 탈락 (5-1비용-4반격)', a.alive === false);
+  eq('  실안개 사용자 HP (10-2비용+5보너스-2총알)', b.hp, 11);
+});
+
+test('처치 보너스: 데스매치 비진출 탈락에는 지급 없음', async () => {
+  const [a,b,c] = setup(3);
+  G.killBonus = 5;
+  a.hp = 15; b.hp = 15; c.hp = 9;
+  finishMainGame();
+  eq('  탈락자에 처치자 기록 없음', c.killedBy, null);
+  eq('  생존자 HP는 규칙대로 10', a.hp, 10);
+});
+
+test('처치 보너스: 0으로 두면 비활성화', async () => {
+  const [a,b] = setup(3);
+  G.killBonus = 0;
+  a.hp = 10; b.hp = 2;
+  await playCard(a, give(a,'gun'), { targets:[b] });
+  is('  대상 탈락', b.alive === false);
+  eq('  회복 없음', a.hp, 9);
+});
+
 /* ---------- 실행 ---------- */
 (async () => {
   for (const t of T){

@@ -51,15 +51,16 @@ async function measure(cfg){
   return r;
 }
 
+/* 처치 보너스(G.killBonus, 기본 5)가 켜진 상태에서 비율을 되돌리기 위한 스윕 */
 const CONFIGS = [
-  ['tieBreak 0',            { tieBreak:0 }],
-  ['tieBreak 6',            { tieBreak:6 }],
-  ['tieBreak 12',           { tieBreak:12 }],
-  ['tieBreak 20',           { tieBreak:20 }],
-  ['tieBreak 30',           { tieBreak:30 }],
-  ['tieBreak 45',           { tieBreak:45 }],
-  ['tie20+공격2.3/1.6',     { tieBreak:20, atkDmg:2.3, atkCost:1.6 }],
-  ['tie30+공격2.3/1.6',     { tieBreak:30, atkDmg:2.3, atkCost:1.6 }]
+  ['공격2.9/1.2',           { atkDmg:2.9, atkCost:1.2 }],
+  ['공격3.4/1.0',           { atkDmg:3.4, atkCost:1.0 }],
+  ['공격4.0/0.8',           { atkDmg:4.0, atkCost:0.8 }],
+  ['2.9/1.2+여유7/5',       { atkDmg:2.9, atkCost:1.2, reserveEarly:7, reserveLate:5 }],
+  ['3.4/1.0+여유7/5',       { atkDmg:3.4, atkCost:1.0, reserveEarly:7, reserveLate:5 }],
+  ['2.9/1.2+여유5/4',       { atkDmg:2.9, atkCost:1.2, reserveEarly:5, reserveLate:4 }],
+  ['3.4/1.0+여유5/4',       { atkDmg:3.4, atkCost:1.0, reserveEarly:5, reserveLate:4 }],
+  ['4.0/0.8+여유5/4',       { atkDmg:4.0, atkCost:0.8, reserveEarly:5, reserveLate:4 }]
 ];
 
 /* ?cfg=N 으로 설정 1개만 측정 (헤드리스에서 가상시간 예산 초과를 피하려고 분할 실행).

@@ -56,7 +56,9 @@ function freshStatus(){
 }
 
 function makePlayer(idx, name, isAI){
-  return { idx, name, isAI, hp:20, maxHp:20, alive:true, hand:[], st:freshStatus() };
+  return { idx, name, isAI, hp:20, maxHp:20, alive:true, hand:[], st:freshStatus(),
+           lastHitBy:null,   // 마지막으로 HP를 깎은 상대 (없으면 자해·비용 지불)
+           killedBy:null };
 }
 
 const G = {
@@ -65,7 +67,8 @@ const G = {
   eclipse:0,            // 이 라운드까지 일식 유효 (0 = 없음)
   carried:[],           // 훈색 이월 패킷
   deathmatch:false, over:false, winner:null,
-  playedNames:null, log:[], io:null, speed:1200   // 연출 대기 기준값 (ms)
+  playedNames:null, log:[], io:null, speed:1200,  // 연출 대기 기준값 (ms)
+  killBonus:5           // 추가 규칙: 플레이어를 탈락시키면 즉시 HP 회복 (0이면 비활성)
 };
 
 /* ---------------- 연출 이벤트 ----------------
@@ -185,6 +188,8 @@ function dealDamage(src, tgt, raw, opts){
   }
 
   tgt.hp -= final;
+  // 마지막으로 HP를 깎은 주체를 기록 — 처치 보너스를 누구에게 줄지 판단한다
+  if (final > 0) tgt.lastHitBy = (src && src !== tgt) ? src.idx : null;
   const redTxt = prevented > 0 ? ` (방어 ${prevented} 감소)` : '';
   L(`  └ ${tgt.name} 피해 ${final}${redTxt} → HP ${Math.max(tgt.hp,0)}`, 'dmg');
   emit('damage', { target:tgt, amount:final, prevented, hp:Math.max(tgt.hp,0), kind });
@@ -234,20 +239,38 @@ function heal(p, n){
 }
 
 function checkDeaths(){
-  G.players.forEach(p => {
-    if (!p.alive || p.hp > 0) return;
+  // 동시 탈락을 한 묶음으로 처리해야 처치 보너스가 순서에 좌우되지 않는다
+  const dying = G.players.filter(p => p.alive && p.hp <= 0);
+  const fallen = [];
+  dying.forEach(p => {
     if (p.st.phoenix){
       p.st.phoenix = false; p.hp = 5;
       L(`🔥 ${p.name} 「불사조」 발동! HP 5로 복구`, 'big');
       emit('revive', { target:p, hp:5 });
-    } else eliminate(p);
+    } else { eliminate(p, null, p.lastHitBy); fallen.push(p); }
   });
+  fallen.forEach(p => awardKillBonus(p.killedBy, p));
   checkEarlyEnd();
 }
-function eliminate(p, reason){
+
+/* 탈락시킨 플레이어에게 HP 보너스.
+ * 같은 묶음에서 함께 탈락한 플레이어는 받지 못한다. */
+function awardKillBonus(killerIdx, victim){
+  if (G.killBonus <= 0 || killerIdx == null) return;
+  const k = G.players[killerIdx];
+  if (!k || !k.alive || k === victim) return;
+  const before = k.hp;
+  k.hp = Math.min(k.maxHp, k.hp + G.killBonus);     // 회복이므로 최대 HP 20 상한 적용
+  const got = k.hp - before;
+  L(`💀 ${k.name}: ${victim.name} 처치 보너스 HP +${got} → HP ${k.hp}`, 'big');
+  emit('killbonus', { target:k, amount:got, victim });
+}
+
+function eliminate(p, reason, killerIdx){
   if (!p.alive) return;
   p.alive = false;
   p.hp = Math.min(p.hp, 0);
+  p.killedBy = (killerIdx != null && G.players[killerIdx] !== p) ? killerIdx : null;
   L(`☠️ ${p.name} 탈락${reason ? ' ('+reason+')' : ''}`, 'big');
   emit('out', { target:p, reason });
   while (p.hand.length) toDiscard(p.hand.pop());
@@ -284,6 +307,7 @@ async function playCard(p, card, opts){
   const cost = costOf(p, card);
   consumeDiscounts(p, card);
   p.hp -= cost;
+  p.lastHitBy = null;          // 비용 지불로 쓰러지면 처치 보너스 대상이 아니다
 
   // 3) 사용 선언
   const i = p.hand.indexOf(card);
@@ -339,6 +363,7 @@ async function hazeTrap(attacker, target, card){
   if (!use) return;
   target.hand.splice(target.hand.indexOf(haze), 1);
   target.hp -= cost;
+  target.lastHitBy = null;
   L(`  ⚠ ${target.name} 「실안개」 발동! (비용 ${cost})`, 'trap');
   emit('play', { player:target, card:haze, cost, hp:Math.max(target.hp,0), targets:[attacker], trap:true });
   dealDamage(target, attacker, 4, { kind:'attack' });
@@ -634,7 +659,8 @@ function endTurn(p){
     if (p.hp <= 7 && p.hand.length >= 4 && pu.defenseSum < pu.sentenceHP){
       L(`⚖️ 「처형」 집행: ${p.name} (HP ${p.hp}, 손패 ${p.hand.length}장, 방어 감소 합계 ${pu.defenseSum} < ${pu.sentenceHP})`, 'big');
       p.st.phoenix = false;                       // 불사조·불멸 무시
-      eliminate(p, '처형');
+      eliminate(p, '처형', pu.by);
+      awardKillBonus(p.killedBy, p);
     } else {
       L(`  └ ${p.name} 처형 회피 (HP ${p.hp}, 손패 ${p.hand.length}장, 방어 감소 합계 ${pu.defenseSum}/${pu.sentenceHP})`, 'def');
     }
@@ -731,7 +757,8 @@ async function roundEnd(){
         const pu = p.st.punish;
         if (p.hp <= 7 && p.hand.length >= 4 && pu.defenseSum < pu.sentenceHP){
           L(`⚖️ 「처형」 즉시 집행: ${p.name}`, 'big');
-          p.st.phoenix = false; eliminate(p, '처형');
+          p.st.phoenix = false; eliminate(p, '처형', pu.by);
+          awardKillBonus(p.killedBy, p);
         }
         p.st.punish = null;
       }

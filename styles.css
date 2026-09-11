@@ -170,6 +170,7 @@ header{
 .fx-num.block{color:#7fc4ff;font-size:18px}
 .fx-num.revive{color:#ffd45c;font-size:22px}
 .fx-num.elim{color:#ff4040;font-size:22px}
+.fx-num.kill{color:#ffd45c;font-size:24px}
 .fx-num.fx-gone{animation:fxgone .26s ease forwards}
 @keyframes fxpop{
   0%{opacity:0;transform:translate(-50%,-55%) scale(.4)}
@@ -181,7 +182,7 @@ header{
 .fx-flash.dmg{background:rgba(255,107,96,.4);box-shadow:0 0 0 2px #ff6b60,0 0 26px #ff6b60}
 .fx-flash.heal{background:rgba(99,224,160,.32);box-shadow:0 0 0 2px #63e0a0,0 0 24px #63e0a0}
 .fx-flash.block{background:rgba(127,196,255,.26);box-shadow:0 0 0 2px #7fc4ff}
-.fx-flash.revive,.fx-flash.elim{background:rgba(255,212,92,.3);box-shadow:0 0 0 2px #ffd45c}
+.fx-flash.revive,.fx-flash.elim,.fx-flash.kill{background:rgba(255,212,92,.3);box-shadow:0 0 0 2px #ffd45c,0 0 26px #ffd45c}
 @keyframes fxflash{0%{opacity:1}100%{opacity:0}}
 
 /* ---------- 손패 / 카드 ---------- */

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>처치 보너스 밸런스 측정</title></head>
+<body>
+<pre id="out">running...</pre>
+
+<script src="../js/cards.js"></script>
+<script src="../js/game.js"></script>
+<script src="../js/ai.js"></script>
+<script>
+/* 처치 보너스(플레이어 1명 탈락시킬 때 즉시 회복하는 HP)를 0/4/5/6 으로 바꿔가며
+   밸런스 지표를 측정합니다. 모든 설정이 같은 시드 열을 쓰므로 비교가 공정합니다. */
+const errs = [];
+window.onerror = (m,s,l,c) => errs.push(`onerror: ${m} @${l}:${c}`);
+window.addEventListener('unhandledrejection', e => errs.push('unhandled: ' + (e.reason && e.reason.stack || e.reason)));
+
+const UI = { render(){}, onLog(){}, gameOver(){}, humanTurn(p){ return AI.takeTurn(p); } };
+G.io = { ask(spec){
+  switch (spec.kind){
+    case 'confirm': return true;
+    case 'players': return spec.list.slice(0, spec.count);
+    case 'options': { const a = spec.list.filter(o=>!o.disabled); return (a[0]||spec.list[0]).value; }
+    case 'cards':   return spec.list.slice(0, spec.count);
+  }
+} };
+
+const Q     = s => (new RegExp(s + '=(\\d+)').exec(location.search) || [])[1];
+const GAMES = +Q('games') || 300;
+const SEED0 = +Q('seed')  || 1000;
+
+/* 한 게임 안에서 첫 처치를 누가 했는지, 그 직후 몇 명이 남았는지 기록.
+ * 남은 인원 n 이면 "아무 이득도 없을 때" 첫 처치자의 우승 확률은 1/n 이므로,
+ * 이 값을 기준선으로 삼아야 실제 우승률이 높은지 낮은지 판단할 수 있다. */
+let firstKiller = null, killCount = 0, aliveAfterFirstKill = 0;
+const origEliminate = eliminate;
+eliminate = function(p, reason, killerIdx){
+  const wasAlive = p.alive;
+  origEliminate(p, reason, killerIdx);
+  if (wasAlive && !p.alive){
+    killCount++;
+    if (firstKiller === null && p.killedBy != null){
+      firstKiller = p.killedBy;
+      aliveAfterFirstKill = G.players.filter(x => x.alive).length;
+    }
+  }
+};
+
+async function measure(bonus){
+  G.speed = 0;
+  const r = { deathmatch:0, early:0, normal:0, none:0, kills:0, rounds:0,
+              firstKillGames:0, firstKillerWon:0, expectSum:0, winnerHp:[], maxHp20:0 };
+  for (let i = 0; i < GAMES; i++){
+    setSeed(SEED0 + i * 7919);
+    G.killBonus = bonus;
+    firstKiller = null; killCount = 0; aliveAfterFirstKill = 0;
+    await startGame(i % 2 ? 4 : 3, 'P1');
+
+    if (G.deathmatch) r.deathmatch++;
+    else if (G.round < 10) r.early++;
+    else r.normal++;
+    if (!G.winner) r.none++; else { r.winnerHp.push(G.winner.hp); if (G.winner.hp >= 20) r.maxHp20++; }
+    r.kills  += killCount;
+    r.rounds += G.round;
+    if (firstKiller !== null && aliveAfterFirstKill > 0){
+      r.firstKillGames++;
+      r.expectSum += 1 / aliveAfterFirstKill;
+      if (G.winner && G.winner.idx === firstKiller) r.firstKillerWon++;
+    }
+  }
+  r.ratio    = r.deathmatch ? r.early / r.deathmatch : Infinity;
+  r.avgHp    = r.winnerHp.reduce((a,b)=>a+b,0) / (r.winnerHp.length || 1);
+  r.killsPg  = r.kills / GAMES;
+  r.snowball = r.firstKillGames ? r.firstKillerWon / r.firstKillGames : 0;
+  r.expect   = r.firstKillGames ? r.expectSum / r.firstKillGames : 0;
+  return r;
+}
+
+/* 첫처치자우승 vs 기준선: 기준선보다 낮으면 처치가 손해, 비슷하면 중립, 높으면 이득(스노우볼) */
+function row(name, r){
+  const edge = (r.snowball - r.expect) * 100;
+  return name.padEnd(9) +
+    String(r.deathmatch).padStart(6) +
+    String(r.early).padStart(7) +
+    r.ratio.toFixed(2).padStart(7) +
+    r.killsPg.toFixed(2).padStart(8) +
+    (r.snowball * 100).toFixed(1).padStart(9) + '%' +
+    (r.expect * 100).toFixed(1).padStart(8) + '%' +
+    ((edge >= 0 ? '+' : '') + edge.toFixed(1)).padStart(8) + '%p' +
+    r.avgHp.toFixed(1).padStart(8) +
+    `  [n=${r.firstKillGames}, 우승=${r.firstKillerWon}, 기대합=${r.expectSum.toFixed(2)}]`;
+}
+const HEAD = '보너스   데스매치 조기   비율  처치/판  첫처치자우승  기준선    차이   승자HP';
+
+(async () => {
+  const out = document.getElementById('out');
+  const lines = [`설정당 ${GAMES}게임 (3인전/4인전 교대, 동일 시드열 seed=${SEED0})`, '', HEAD, '─'.repeat(78)];
+  for (const b of [0, 4, 5, 6]){
+    lines.push(row('+' + b + ' HP', await measure(b)));
+    out.textContent = lines.join('\n');
+  }
+  out.textContent = lines.join('\n') +
+    `\n\n--- 오류 (${errs.length}) ---\n${errs.slice(0,8).join('\n') || '없음'}\n=== DONE ===`;
+})();
+</script>
+</body>
+</html>

@@ -219,10 +219,10 @@
         <p>브라우저 단위 검증, AI 자동 대전, 화면 폭별 자동 테스트와 밸런스 시뮬레이션을 통해 게임 상태와 UI를 확인했습니다.</p>
       </div>
       <div class="proof-grid">
-        <div class="proof"><strong><em>78</em> / 78</strong><span>규칙 조항별 단위 검증 통과</span></div>
+        <div class="proof"><strong><em>98</em> / 98</strong><span>규칙 조항별 단위 검증 통과</span></div>
         <div class="proof"><strong>40 games</strong><span>AI 자동 대전 · 오류 0건</span></div>
         <div class="proof"><strong>360px</strong><span>모바일 최소 폭 대응</span></div>
-        <div class="proof"><strong>1 : <em>2.86</em></strong><span>데스매치 : 조기종료 측정 비율</span></div>
+        <div class="proof"><strong>1 : <em>2.54</em></strong><span>데스매치 : 조기종료 측정 비율</span></div>
       </div>
     </section>
 
@@ -236,7 +236,7 @@
       <div class="steps">
         <article class="step"><h3>인원 선택</h3><p>3인전 또는 4인전을 선택하면 즉시 게임이 시작됩니다. 별도 설치나 계정 생성은 없습니다.</p></article>
         <article class="step"><h3>드로우 & 플레이</h3><p>매 턴 카드 1장을 뽑고 원하는 만큼 사용합니다. 카드 사용 비용은 내 HP에서 직접 지불합니다.</p></article>
-        <article class="step"><h3>10라운드 생존</h3><p>마지막에 가장 높은 HP를 남긴 플레이어가 승리합니다. 공동 1위라면 데스매치가 이어집니다.</p></article>
+        <article class="step"><h3>10라운드 생존</h3><p>마지막에 가장 높은 HP를 남긴 플레이어가 승리합니다. 공동 1위라면 데스매치가 이어집니다. 다른 플레이어를 탈락시키면 즉시 HP 5를 회복합니다.</p></article>
       </div>
     </section>
 
@@ -288,6 +288,8 @@
       <li><b>피해 감소</b>는 합산되며 최종 피해는 0 미만이 되지 않습니다. 지속 피해도 감소 효과를 받습니다.</li>
       <li><b>승리</b>: 10라운드 종료 시 HP 1위. 공동 1위면 <b>데스매치</b>(HP 10, 모든 지속 효과 취소, 최후의 1인까지).</li>
       <li><b>조기 종료</b>: 1명만 남으면 즉시 그 플레이어의 승리.</li>
+      <li><b>처치 보너스</b> <span class="warn">(추가 규칙)</span>: 다른 플레이어를 탈락시키면 즉시 <b>HP 5</b> 회복 (최대 20).
+        마지막으로 HP를 깎은 플레이어가 받으며, 비용 지불로 자멸하거나 함께 쓰러지면 아무도 받지 못합니다.</li>
       <li><b>덱 재구성</b>: 덱이 소진되면 버린 카드 더미를 섞어 새 덱을 만듭니다(소멸 카드 제외).</li>
       <li><b>10라운드 종료 시</b> 남아있는 모든 이월 피해·지연 효과(처벌의 처형 조건, 피의 디버프 등)를 즉시 처리합니다.</li>
     </ul>

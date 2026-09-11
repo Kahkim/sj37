@@ -323,7 +323,7 @@ const UI = (() => {
     num.className = 'fx-num ' + cls;
     num.textContent = text;
     num.style.left = `${r.left + r.width / 2 + (n - 1) * 30}px`;
-    num.style.top  = `${r.top - 4 - (n - 1) * 15}px`;
+    num.style.top  = `${r.top - 4 - (n - 1) * 24}px`;
     layer.appendChild(num);
     fx.nodes.push(num);
 
@@ -371,6 +371,9 @@ const UI = (() => {
       case 'heal':   fxHit(d.target.idx, '+' + d.amount, 'heal'); break;
       case 'revive': fxHit(d.target.idx, '부활!', 'revive'); break;
       case 'out':    fxHit(d.target.idx, '탈락', 'elim'); break;
+      case 'killbonus':
+        fxHit(d.target.idx, d.amount > 0 ? `처치 +${d.amount}` : '처치!', 'kill');
+        break;
     }
   }
 
@@ -407,6 +410,7 @@ const UI = (() => {
         onEvent('damage', { target:G.players[0], amount:3, prevented:1 });
         onEvent('damage', { target:G.players[2], amount:2, prevented:0 });
         onEvent('heal',   { target:G.players[1], amount:3 });
+        onEvent('killbonus', { target:G.players[1], amount:5 });
       }, 60);
       return;
     }
