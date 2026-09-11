@@ -6,8 +6,15 @@ const UI = (() => {
   let busy = false;         // 비동기 처리 중
   let endTurnResolve = null;
   let myTurn = false;
+  let timeUp = false;       // 멀티플레이: 내 턴 시간이 다 됨
+  let guest = null;         // 멀티플레이 참가자일 때: { play, endTurn, state:{ myTurn, busy } }
 
-  const me = () => G.players[0];
+  const me = () => G.players[G.localIdx] || G.players[0];
+  const isMyTurn = () => guest ? guest.state.myTurn : myTurn;
+  const isBusy   = () => guest ? guest.state.busy   : busy;
+  /* 접속 상태: 참가자 화면은 방장이 알려준 값, 방장 화면은 접속 목록으로 판단 */
+  const onlineOf = p => p.online !== undefined ? p.online
+                      : (p.remote && G.mp) ? !!G.mp.presence[p.uid] : true;
 
   /* 개발용: index.html?autotest 로 열면 사람 자리도 AI가 자동 플레이 (UI 스모크 테스트) */
   const AUTOTEST = /[?&]autotest/.test(location.search);
@@ -89,14 +96,15 @@ const UI = (() => {
       (G.carried.length ? ` · <span class="warn">↪ 이월 ${G.carried.length}</span>` : '');
 
     // 상대
+    const p0 = me();
     const box = $('#opponents');
     box.innerHTML = '';
-    G.players.slice(1).forEach(p => {
+    G.players.filter(p => p !== p0).forEach(p => {
       const el = document.createElement('div');
       el.className = 'opp' + (p.alive ? '' : ' dead') + (G.current === p ? ' active' : '');
       el.dataset.idx = p.idx;
       el.innerHTML =
-        `<div class="opp-head"><span class="opp-name">${p.name}</span>
+        `<div class="opp-head"><span class="opp-name">${p.name}${nameTag(p)}</span>
            <span class="opp-hand">🂠 ${p.hand.length}</span></div>
          ${hpBar(p)}
          <div class="badges">${badges(p)}</div>`;
@@ -119,7 +127,7 @@ const UI = (() => {
     });
 
     // 나
-    const p0 = me();
+    $('#myPanel').dataset.idx = p0.idx;
     $('#myPanel').innerHTML =
       `<div class="opp-head"><span class="opp-name">${p0.name}${G.current === p0 ? ' <span class="turnmark">내 턴</span>' : ''}</span>
          <span class="opp-hand">🂠 ${p0.hand.length}</span></div>
@@ -132,7 +140,7 @@ const UI = (() => {
     hand.innerHTML = '';
     p0.hand.forEach(c => {
       const reason = whyCannot(p0, c);
-      const playable = myTurn && !busy && reason === null;
+      const playable = isMyTurn() && !isBusy() && reason === null;
       const el = cardEl(c, { owner:p0, cls: playable ? 'playable' : 'unplayable' });
       if (p0.st.mustUse.includes(c.id)) el.classList.add('must');
       el.title = `${c.name} (${TYPE_NAME[c.type]} / 비용 ${costOf(p0, c)})\n${c.text}` +
@@ -143,17 +151,42 @@ const UI = (() => {
 
     // 턴 종료 버튼
     const et = $('#endTurnBtn');
-    const forced = myTurn ? pendingMustUse(p0) : [];
-    et.disabled = !myTurn || busy || forced.length > 0;
+    const forced = isMyTurn() ? pendingMustUse(p0) : [];
+    et.disabled = !isMyTurn() || isBusy() || forced.length > 0;
     et.textContent = forced.length ? `「${forced[0].name}」을(를) 반드시 사용해야 합니다` : '턴 종료';
 
+    renderTimer();
     renderLog();
+    if (G.mp) G.mp.scheduleSync();          // 방장: 참가자 화면 갱신
   }
+
+  /* 이름 옆 표시: AI / 연결 끊김 / AI 대행 */
+  function nameTag(p){
+    if (p.aiTakeover || p.takeover) return ' <span class="ntag warn">🔌 AI 대행</span>';
+    if (p.remote && !onlineOf(p))   return ' <span class="ntag warn">🔌 연결 끊김</span>';
+    if (p.isAI && !p.remote)        return ' <span class="ntag">AI</span>';
+    return '';
+  }
+
+  /* 멀티플레이 턴 타이머 */
+  function renderTimer(){
+    const el = $('#turnTimer');
+    if (!el) return;
+    const t = G.turnInfo;
+    const left = t && t.deadline ? Math.ceil((t.deadline - Date.now()) / 1000) : 0;
+    if (!G.mp && !guest || left <= 0 || !G.players[t.idx]){ el.textContent = ''; el.className = ''; return; }
+    const who = t.idx === me().idx ? '내 턴' : G.players[t.idx].name;
+    el.textContent = `⏱ ${left}초 · ${who}`;
+    el.className = left <= 10 ? 'urgent' : '';
+  }
+  setInterval(() => { if (G.mp || guest) renderTimer(); }, 500);
 
   function renderLog(){
     const box = $('#log');
     if (!box) return;
-    box.innerHTML = G.log.map(e => `<div class="lg ${e.cls}">${e.msg}</div>`).join('');
+    box.innerHTML = G.log
+      .map(e => { const t = logTextFor(e, G.localIdx); return t == null ? '' : `<div class="lg ${e.cls}">${t}</div>`; })
+      .join('');
     box.scrollTop = box.scrollHeight;
   }
 
@@ -170,9 +203,10 @@ const UI = (() => {
 
   /* 클릭 한 번으로 바로 사용 (대상 지정이 필요한 카드는 대상 선택 창에서 취소 가능) */
   function onCardClick(card, reason){
-    if (busy) return;
-    if (!myTurn) return showHint('내 턴이 아닙니다');
+    if (isBusy()) return;
+    if (!isMyTurn()) return showHint('내 턴이 아닙니다');
     if (reason)  return showHint(`「${card.name}」 · ${reason}`);
+    if (guest) return guest.play(card.id);      // 참가자: 방장에게 보내고 결과를 기다린다
     doPlay(card);
   }
 
@@ -183,8 +217,8 @@ const UI = (() => {
     catch (e){ console.error(e); L('오류: ' + e.message, 'warn'); }
     busy = false;
     render();
-    // 자신이 탈락했거나 게임이 끝났으면 턴을 자동 종료
-    if ((!me().alive || G.over) && endTurnResolve) endTurnResolve();
+    // 자신이 탈락했거나 게임이 끝났거나 시간이 다 됐으면 턴을 자동 종료
+    if ((!me().alive || G.over || timeUp) && endTurnResolve) endTurnResolve();
   }
 
   /* ---------- 사람 턴 ---------- */
@@ -194,11 +228,29 @@ const UI = (() => {
     if (AUTOTEST){
       return AI.takeTurn(p).then(() => { myTurn = false; render(); });
     }
+    timeUp = false;
     return new Promise(res => {
-      endTurnResolve = () => { myTurn = false; endTurnResolve = null; render(); res(); };
-      if (!p.alive) endTurnResolve();
+      let timer = null;
+      endTurnResolve = () => { clearTimeout(timer); myTurn = false; endTurnResolve = null; render(); res(); };
+      if (!p.alive) return endTurnResolve();
+      // 멀티플레이에서는 방장도 제한 시간이 있다 (카드 처리 중이면 끝난 뒤 종료)
+      const t = G.turnInfo;
+      if (G.mp && t && t.deadline){
+        timer = setTimeout(() => {
+          timeUp = true;
+          L(`⏱ ${p.name}: 시간 초과 — 턴 종료`, 'warn');
+          if (!busy && endTurnResolve) endTurnResolve();
+        }, Math.max(0, t.deadline - Date.now()));
+      }
     });
   }
+
+  /* 참가자 모드 연결 (lobby.js 가 호출) */
+  function attachGuest(g){ guest = g; }
+
+  /* 열린 선택 창 닫기 (참가자: 방장 쪽에서 시간이 다 되어 요청이 사라졌을 때) */
+  let modalDone = null;
+  function closeModal(){ if (modalDone) modalDone(undefined); }
 
   /* ---------- 모달 (선택 요청) ---------- */
   function ask(spec){
@@ -215,8 +267,11 @@ const UI = (() => {
       foot.className = 'm-foot';
       bd.appendChild(foot);
 
-      const done = v => { m.hidden = true; bd.innerHTML = ''; resolve(v); };
+      const done = v => { modalDone = null; m.hidden = true; bd.innerHTML = ''; resolve(v); };
+      modalDone = done;
 
+      // 후보가 요구 수보다 적으면 있는 만큼만 고르게 한다 (확인 버튼이 영영 안 눌리는 것 방지)
+      const need = Math.min(spec.count || 1, (spec.list || []).length || 1);
       if (spec.kind === 'confirm'){
         const y = mkBtn('발동한다', 'primary', () => done(true));
         const n = mkBtn('발동하지 않는다', '', () => done(false));
@@ -239,16 +294,16 @@ const UI = (() => {
           b.innerHTML = `<div class="pb-name">${pl.name}</div><div class="pb-hp">HP ${pl.hp}</div>
                          <div class="pb-hand">손패 ${pl.hand.length}장</div>`;
           b.onclick = () => {
-            if (spec.count === 1) return done([pl]);
+            if (need === 1) return done([pl]);
             const i = chosen.indexOf(pl);
             if (i >= 0){ chosen.splice(i, 1); b.classList.remove('on'); }
-            else if (chosen.length < spec.count){ chosen.push(pl); b.classList.add('on'); }
-            okBtn.disabled = chosen.length !== spec.count;
+            else if (chosen.length < need){ chosen.push(pl); b.classList.add('on'); }
+            okBtn.disabled = chosen.length !== need;
           };
           wrap.appendChild(b);
         });
         const okBtn = mkBtn('확인', 'primary', () => done(chosen.slice()));
-        if (spec.count > 1){ okBtn.disabled = true; foot.appendChild(okBtn); }
+        if (need > 1){ okBtn.disabled = true; foot.appendChild(okBtn); }
         if (spec.cancel) foot.appendChild(mkBtn('취소', '', () => done(null)));
       }
       else if (spec.kind === 'cards'){
@@ -257,16 +312,16 @@ const UI = (() => {
         spec.list.forEach(c => {
           const el = cardEl(c, { cls:'pick' });
           el.onclick = () => {
-            if (spec.count === 1) return done([c]);
+            if (need === 1) return done([c]);
             const i = chosen.indexOf(c);
             if (i >= 0){ chosen.splice(i, 1); el.classList.remove('selected'); }
-            else if (chosen.length < spec.count){ chosen.push(c); el.classList.add('selected'); }
-            okBtn.disabled = chosen.length !== spec.count;
+            else if (chosen.length < need){ chosen.push(c); el.classList.add('selected'); }
+            okBtn.disabled = chosen.length !== need;
           };
           wrap.appendChild(el);
         });
-        const okBtn = mkBtn(`확인 (${spec.count}장 선택)`, 'primary', () => done(chosen.slice()));
-        if (spec.count > 1){ okBtn.disabled = true; foot.appendChild(okBtn); }
+        const okBtn = mkBtn(`확인 (${need}장 선택)`, 'primary', () => done(chosen.slice()));
+        if (need > 1){ okBtn.disabled = true; foot.appendChild(okBtn); }
       }
     });
   }
@@ -291,7 +346,10 @@ const UI = (() => {
        <table class="rank"><tr><th>순위</th><th>플레이어</th><th>결과</th></tr>${rows}</table>`;
     const foot = document.createElement('div');
     foot.className = 'm-foot';
-    foot.appendChild(mkBtn('다시 하기', 'primary', () => location.reload()));
+    const multi = !!(G.mp || guest);
+    // 멀티플레이는 방 주소(?room=)로 다시 들어가지 않도록 첫 화면으로 보낸다
+    foot.appendChild(mkBtn(multi ? '처음으로' : '다시 하기', 'primary',
+      () => multi ? (location.href = location.pathname) : location.reload()));
     $('#modalBody').appendChild(foot);
     $('#modal').hidden = false;
   }
@@ -380,17 +438,24 @@ const UI = (() => {
   /* ---------- 초기화 ---------- */
   function init(){
     G.io = { ask };
-    $('#endTurnBtn').onclick = () => { if (endTurnResolve) endTurnResolve(); };
+    $('#endTurnBtn').onclick = () => {
+      if (guest){ if (guest.state.myTurn && !guest.state.busy) guest.endTurn(); return; }
+      if (endTurnResolve) endTurnResolve();
+    };
     $('#rulesBtn').onclick   = () => { $('#rules').hidden = !$('#rules').hidden; };
     $('#speedSel').onchange  = e => { G.speed = +e.target.value; };
 
-    document.querySelectorAll('#start .pcount').forEach(b => {
+    document.querySelectorAll('#start .pcount[data-n]').forEach(b => {
       b.onclick = () => {
         $('#start').hidden = true;
         $('#board').hidden = false;
         startGame(+b.dataset.n, '나');
       };
     });
+    // 친구와 플레이 (대기실) — 초대 링크(?room=코드)로 들어오면 바로 참가 화면
+    document.querySelectorAll('#start .mp-open').forEach(b => b.onclick = () => Lobby.open());
+    const room = new URLSearchParams(location.search).get('room');
+    if (room && typeof Lobby !== 'undefined') Lobby.open(room);
 
     /* 개발용: index.html?fxdemo — 게임을 진행하지 않고 연출만 한 번 재생 */
     if (/[?&]fxdemo/.test(location.search)){
@@ -415,7 +480,7 @@ const UI = (() => {
       return;
     }
 
-    if (AUTOTEST){
+    if (AUTOTEST && !new URLSearchParams(location.search).get("mp")){   // 멀티플레이 자동 테스트는 lobby.js 가 진행
       window.__uiErrors = [];
       window.addEventListener('error', e => window.__uiErrors.push(String(e.message)));
       window.addEventListener('unhandledrejection', e => window.__uiErrors.push(String(e.reason)));
@@ -438,7 +503,7 @@ const UI = (() => {
     }
   }
 
-  return { render, humanTurn, gameOver, onLog, onEvent, init, ask };
+  return { render, humanTurn, gameOver, onLog, onEvent, init, ask, attachGuest, closeModal, showHint };
 })();
 
 window.addEventListener('DOMContentLoaded', UI.init);

@@ -156,6 +156,7 @@
         <div class="pcount-row hero-actions">
           <button class="pcount" data-n="3">3인전 시작<small>나 + AI 2명</small></button>
           <button class="pcount" data-n="4">4인전 시작<small>나 + AI 3명</small></button>
+          <button class="pcount mp-open">친구와 플레이<small>초대코드로 함께</small></button>
         </div>
         <div class="mini-proof">
           <span><i></i> 설치 없음</span>
@@ -205,7 +206,7 @@
       <div class="feature-grid">
         <article class="feature"><div class="feature-icon">🂠</div><h3>37장 단일 덱</h3><p>모든 플레이어가 같은 덱을 공유합니다. 드로우와 버림 더미의 흐름까지 전략의 일부가 됩니다.</p></article>
         <article class="feature"><div class="feature-icon">♥</div><h3>HP가 곧 비용</h3><p>카드 사용에 별도 마나가 없습니다. 더 강하게 움직일수록 내 생존 여력도 함께 줄어듭니다.</p></article>
-        <article class="feature"><div class="feature-icon">⚔</div><h3>3~4인 AI 대전</h3><p>사람 1명과 AI 2~3명이 맞붙습니다. 공격, 회복, 견제와 순위 경쟁이 동시에 일어납니다.</p></article>
+        <article class="feature"><div class="feature-icon">⚔</div><h3>AI 또는 친구와 3~4인전</h3><p>AI와 바로 붙거나, 초대코드로 친구를 불러 함께 플레이합니다. 빈 자리는 AI가 채웁니다.</p></article>
         <article class="feature"><div class="feature-icon">☠</div><h3>데스매치</h3><p>10라운드 종료 시 공동 1위라면 승부가 끝나지 않습니다. HP 10으로 다시 맞붙어 최후의 1인을 가립니다.</p></article>
       </div>
     </section>
@@ -219,7 +220,7 @@
         <p>브라우저 단위 검증, AI 자동 대전, 화면 폭별 자동 테스트와 밸런스 시뮬레이션을 통해 게임 상태와 UI를 확인했습니다.</p>
       </div>
       <div class="proof-grid">
-        <div class="proof"><strong><em>98</em> / 98</strong><span>규칙 조항별 단위 검증 통과</span></div>
+        <div class="proof"><strong><em>101</em> / 101</strong><span>규칙 조항별 단위 검증 통과</span></div>
         <div class="proof"><strong>40 games</strong><span>AI 자동 대전 · 오류 0건</span></div>
         <div class="proof"><strong>360px</strong><span>모바일 최소 폭 대응</span></div>
         <div class="proof"><strong>1 : <em>2.54</em></strong><span>데스매치 : 조기종료 측정 비율</span></div>
@@ -258,11 +259,64 @@
   </main>
 </div>
 
+<!-- 친구와 플레이: 대기실 -->
+<div id="lobby" hidden>
+  <div class="lb-box">
+    <button id="lbBack" class="lb-back">← 처음으로</button>
+    <h2>친구와 플레이</h2>
+    <p class="lb-sub">초대코드로 친구를 불러 함께 플레이합니다. 빈 자리는 AI가 채웁니다.</p>
+
+    <section id="lbEntry">
+      <label class="lb-name">닉네임
+        <input id="lbName" maxlength="10" placeholder="친구에게 보일 이름" autocomplete="nickname">
+      </label>
+      <div class="lb-cols">
+        <div class="lb-card">
+          <h3>방 만들기</h3>
+          <div class="lb-seg" id="lbSize">
+            <button data-n="3">3인전</button><button data-n="4" class="on">4인전</button>
+          </div>
+          <p>방을 만들면 초대코드가 나옵니다.</p>
+          <button id="lbCreate" class="btn primary">방 만들기</button>
+        </div>
+        <div class="lb-card">
+          <h3>초대코드로 참가</h3>
+          <input id="lbCode" class="lb-codein" maxlength="5" placeholder="K7Q2X" autocomplete="off" autocapitalize="characters">
+          <p>친구에게 받은 5자리 코드를 입력하세요.</p>
+          <button id="lbJoin" class="btn primary">참가하기</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="lbRoom" hidden>
+      <div class="lb-codebox">
+        <span>초대코드</span>
+        <b id="lbCodeBig">-----</b>
+        <div class="lb-share">
+          <button id="lbCopy" class="btn">링크 복사</button>
+          <button id="lbShare" class="btn">공유하기</button>
+        </div>
+      </div>
+      <div class="lb-seats-head">자리 <span id="lbCount">1 / 4</span></div>
+      <ul id="lbSeats" class="lb-seats"></ul>
+      <p id="lbStatus" class="lb-status"></p>
+      <div class="lb-actions">
+        <button id="lbStart" class="btn primary big">게임 시작</button>
+        <button id="lbLeave" class="btn">나가기</button>
+      </div>
+    </section>
+
+    <p id="lbError" class="lb-error" hidden></p>
+  </div>
+</div>
+
 <div id="board" hidden>
+  <div id="netBanner" hidden></div>
   <header>
     <div class="h-left">
       <span class="logo">37</span>
       <span id="roundInfo">라운드 1 / 10</span>
+      <span id="turnTimer"></span>
     </div>
     <div id="pileInfo"></div>
     <div class="h-right">
@@ -318,6 +372,9 @@
 <script src="js/cards.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ai.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/net.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/lobby.js"></script>
 </body>
 </html>

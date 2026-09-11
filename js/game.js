@@ -58,7 +58,7 @@ function freshStatus(){
 function makePlayer(idx, name, isAI){
   return { idx, name, isAI, hp:20, maxHp:20, alive:true, hand:[], st:freshStatus(),
            lastHitBy:null,   // 마지막으로 HP를 깎은 상대 (없으면 자해·비용 지불)
-           killedBy:null };
+           killedBy:null, remote:false, uid:null };
 }
 
 const G = {
@@ -68,7 +68,9 @@ const G = {
   carried:[],           // 훈색 이월 패킷
   deathmatch:false, over:false, winner:null,
   playedNames:null, log:[], io:null, speed:1200,  // 연출 대기 기준값 (ms)
-  killBonus:5           // 추가 규칙: 플레이어를 탈락시키면 즉시 HP 회복 (0이면 비활성)
+  killBonus:5,          // 추가 규칙: 플레이어를 탈락시키면 즉시 HP 회복 (0이면 비활성)
+  localIdx:0,           // 이 브라우저에서 조작하는 플레이어 자리
+  mp:null               // 멀티플레이 방장 모듈 (싱글이면 null)
 };
 
 /* ---------------- 연출 이벤트 ----------------
@@ -76,13 +78,23 @@ const G = {
  * type: play(카드 사용) | damage(피해) | heal(회복) | revive(불사조) | out(탈락) */
 function emit(type, data){
   if (typeof UI !== 'undefined' && UI.onEvent) UI.onEvent(type, data);
+  if (G.mp) G.mp.onEngineEvent(type, data);     // 멀티플레이: 다른 플레이어 화면에도 연출
 }
 
-/* ---------------- 로그 ---------------- */
-function L(msg, cls){
-  G.log.push({ round:G.round, msg, cls:cls||'' });
+/* ---------------- 로그 ----------------
+ * opts.to  : 이 플레이어에게만 원문을 보여준다 (손패처럼 비공개 정보)
+ * opts.alt : 나머지 플레이어에게 보여줄 문구 (없으면 표시하지 않음) */
+function L(msg, cls, opts){
+  const e = { round:G.round, msg, cls:cls||'' };
+  if (opts && opts.to != null){ e.to = opts.to; e.alt = opts.alt || null; }
+  G.log.push(e);
   if (G.log.length > 400) G.log.shift();
   if (typeof UI !== 'undefined' && UI.onLog) UI.onLog();
+}
+/* 보는 사람 기준으로 로그 한 줄의 문구 (안 보여야 하면 null) */
+function logTextFor(e, viewerIdx){
+  if (e.to == null || e.to === viewerIdx) return e.msg;
+  return e.alt;
 }
 
 /* ---------------- 조회 ---------------- */
@@ -287,6 +299,7 @@ function checkEarlyEnd(){
 /* ---------------- 선택 요청 ---------------- */
 async function ask(p, spec){
   if (p.isAI) return AI.answer(p, spec);
+  if (p.remote && G.mp) return G.mp.askRemote(p, spec);   // 멀티플레이: 그 플레이어 화면에 묻는다
   return G.io.ask(spec);
 }
 
@@ -337,13 +350,16 @@ async function playCard(p, card, opts){
 
 async function pickTargets(p, card){
   const cand = others(p);
+  // 복사한 효과(프리즘·해골·무지개)는 사용 조건 검사를 거치지 않으므로 후보가 모자랄 수 있다.
+  // 규칙서 「처리 불가: 가능한 만큼만 수행」대로 있는 대상만으로 진행한다.
+  if ((card.target === 'enemy' || card.target === 'enemy2') && !cand.length) return [];
   if (card.target === 'enemy'){
     if (cand.length === 1) return [cand[0]];
     const r = await ask(p, { kind:'players', list:cand, count:1, cancel:true, prompt:`「${card.name}」의 대상을 지정하세요` });
     return r ? [r[0]] : null;
   }
   if (card.target === 'enemy2'){
-    if (cand.length === 2) return cand.slice();
+    if (cand.length <= 2) return cand.slice();
     const r = await ask(p, { kind:'players', list:cand, count:2, cancel:true, prompt:`「${card.name}」의 대상 2명을 지정하세요` });
     return r ? r : null;
   }
@@ -416,7 +432,8 @@ async function resolveCard(p, card, ctx){
       const got = draw(p, 1);
       if (got[0]){
         p.st.mustUse.push(got[0].id);
-        L(`  └ 「${got[0].name}」 드로우 - 사용 가능한 첫 기회에 반드시 사용해야 합니다`, 'warn');
+        L(`  └ 「${got[0].name}」 드로우 - 사용 가능한 첫 기회에 반드시 사용해야 합니다`, 'warn',
+          { to:p.idx, alt:'  └ 1장 드로우 - 뽑은 카드는 첫 기회에 반드시 사용' });
       }
       break;
     }
@@ -515,7 +532,8 @@ async function resolveCard(p, card, ctx){
       const chosen = (r && r[0]) || top[0];
       p.hand.push(chosen);
       top.filter(c => c !== chosen).forEach(c => G.deck.push(c));
-      L(`  └ 「${chosen.name}」 손패로, 나머지 ${top.length-1}장 덱 맨 아래로`, 'draw');
+      L(`  └ 「${chosen.name}」 손패로, 나머지 ${top.length-1}장 덱 맨 아래로`, 'draw',
+        { to:p.idx, alt:`  └ 1장 손패로, 나머지 ${top.length-1}장 덱 맨 아래로` });
       break;
     }
 
@@ -806,11 +824,21 @@ function finishMainGame(){
 }
 
 /* ---------------- 게임 루프 ---------------- */
-async function startGame(playerCount, humanName){
-  G.players = [];
-  G.players.push(makePlayer(0, humanName || '나', false));
+/* setup: [{ name, kind:'local'|'remote'|'ai', uid }] — 멀티플레이 좌석 구성.
+ * 생략하면 사람 1명(자리 0) + AI 로 채운다. */
+async function startGame(playerCount, humanName, setup){
   const botNames = ['봇 알파', '봇 베타', '봇 감마'];
-  for (let i=1;i<playerCount;i++) G.players.push(makePlayer(i, botNames[i-1], true));
+  if (!setup){
+    setup = [{ name: humanName || '나', kind:'local' }];
+    for (let i=1;i<playerCount;i++) setup.push({ name: botNames[i-1], kind:'ai' });
+  }
+  G.players = setup.map((s, i) => {
+    const p = makePlayer(i, s.name, s.kind === 'ai');
+    if (s.kind === 'remote'){ p.remote = true; p.uid = s.uid; }
+    return p;
+  });
+  playerCount = G.players.length;
+  G.localIdx = Math.max(0, setup.findIndex(s => s.kind === 'local'));
   G.deck = []; G.discard = []; G.exiled = []; G.carried = [];
   G.round = 1; G.eclipse = 0; G.over = false; G.winner = null;
   G.deathmatch = false; G.log = []; G.playedNames = new Set();
@@ -829,8 +857,10 @@ async function startGame(playerCount, humanName){
       if (!p.alive) continue;
       if (G.over) break;
       beginTurn(p);
+      if (G.mp) G.mp.beforeTurn(p);          // 멀티플레이: 턴 타이머, 재접속자 복귀
       if (typeof UI !== 'undefined') UI.render();
       if (p.isAI){ await sleep(G.speed*0.6); await AI.takeTurn(p); }
+      else if (p.remote && G.mp) await G.mp.remoteTurn(p);    // 원격 플레이어 (끊기면 AI가 대신)
       else await UI.humanTurn(p);
       endTurn(p);
       if (typeof UI !== 'undefined') UI.render();
@@ -850,5 +880,6 @@ async function startGame(playerCount, humanName){
     }
     await sleep(G.speed*0.4);
   }
+  if (G.mp) G.mp.onGameOver();
   if (typeof UI !== 'undefined') UI.gameOver();
 }

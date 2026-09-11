@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>37 게임 실제 Firebase 검증</title></head>
+<body>
+<pre id="out">running...</pre>
+
+<script src="../js/cards.js"></script>
+<script src="../js/game.js"></script>
+<script src="../js/ai.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/net.js"></script>
+<script>
+/* 실제 Firebase 에 방장 1 + 참가자 봇 2 를 서로 다른 익명 계정으로 붙여 한 판을 끝까지 둔다.
+ * 참가자 계정으로 보안 규칙이 막아야 하는 동작을 시도해, 서버가 거부하는지 확인한다.
+ * 반드시 http://localhost 로 열 것 (test/serve.ps1). 결과는 POST /report 로 보낸다. */
+const out = document.getElementById('out');
+const log = s => { out.textContent += '\n' + s; };
+const errs = [];
+window.onerror = (m,s,l,c,e) => errs.push(`onerror: ${m} @${(s || '').split('/').pop()}:${l}:${c} ${e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : ''}`);
+window.addEventListener('unhandledrejection', e => errs.push('unhandled: ' + (e.reason && e.reason.message || e.reason)));
+
+const UI = { render(){ if (G.mp) G.mp.scheduleSync(); }, onLog(){}, onEvent(){}, gameOver(){},
+             humanTurn(p){ return AI.takeTurn(p); } };
+G.io = { ask(spec){ return AI.answer(G.players[G.localIdx], spec); } };
+Net.CFG.turnMs = 15000; Net.CFG.askMs = 10000; Net.CFG.syncMs = 100;
+G.speed = 80;
+
+const arr = Net.arr;
+const R = { steps:[], security:[], privacy:[], views:{}, latency:[], game:null };
+const sleepMs = ms => new Promise(r => setTimeout(r, ms));
+const waitFor = async (cond, ms) => { const end = Date.now() + ms; while (!cond()){ if (Date.now() > end) return false; await sleepMs(50); } return true; };
+
+function bot(store, name){
+  const guest = Net.Guest(store);
+  const B = { name, store, guest, sent:0, sentAt:0, acted:-1, turnKey:'', acts:0, askSeen:0, over:false, seat:-1 };
+  R.views[name] = 0;
+  guest.onView = v => {
+    R.views[name]++;
+    if (!arr(v.players)[v.you]){                       // 불완전한 화면 — 내용을 기록하고 무시
+      R.bad = R.bad || [];
+      if (R.bad.length < 4) R.bad.push({ who:name, keys:Object.keys(v).join(','), you:v.you, current:v.current,
+                                         players:arr(v.players).length, seq:v.seq, over:v.over });
+      return;
+    }
+    B.seat = v.you;
+    // 지연은 연결을 끊지 않는 친구1 기준으로만 잰다 (끊긴 동안 쌓인 입력이 섞이지 않게)
+    if (B.sentAt && v.ack >= B.sent){ if (name === '친구1') R.latency.push(Date.now() - B.sentAt); B.sentAt = 0; }
+    arr(v.players).forEach(p => {
+      if (p.idx !== v.you && !(p.st || {}).reveal && arr(p.hand).length) R.privacy.push(`${name}: ${p.name} 손패 노출`);
+    });
+    if (v.over){ B.over = true; return; }
+    if (v.ask && v.ask.id !== B.askSeen){
+      B.askSeen = v.ask.id;
+      const s = v.ask.spec, list = arr(s.list);
+      const ans = s.kind === 'confirm' ? true
+                : s.kind === 'options' ? (list.find(o => !o.disabled) || {}).value
+                : list.slice(0, s.count);
+      guest.answer(v.ask.id, ans);
+      return;
+    }
+    if (v.ask || v.current !== v.you || B.sent > v.ack || B.acted === v.seq) return;
+    B.acted = v.seq;
+    const key = v.round + ':' + v.current;
+    if (key !== B.turnKey){ B.turnKey = key; B.acts = 0; }
+    const me = arr(v.players)[v.you], hand = arr(me.hand);
+    const forced = arr(me.st && me.st.mustUse).filter(id => hand.includes(id));
+    B.sentAt = Date.now();
+    if (forced.length) B.sent = guest.play(forced[0]);
+    else if (B.acts++ < 2 && hand.length && Math.random() < 0.7) B.sent = guest.play(hand[(Math.random() * hand.length) | 0]);
+    else B.sent = guest.endTurn();
+  };
+  return B;
+}
+
+/* 보안 규칙이 막아야 하는 동작 — 성공하면 문제 */
+async function expectDenied(label, fn){
+  try { await fn(); R.security.push({ label, ok:false, note:'허용됨 (막혀야 함)' }); }
+  catch (e){ R.security.push({ label, ok:true, note:String(e.code || e.message).slice(0, 40) }); }
+}
+async function expectAllowed(label, fn){
+  try { await fn(); R.security.push({ label, ok:true, note:'허용' }); }
+  catch (e){ R.security.push({ label, ok:false, note:'거부됨: ' + String(e.code || e.message).slice(0, 40) }); }
+}
+
+(async () => {
+  const t0 = Date.now();
+  const cfg = window.FIREBASE_CONFIG;
+  try {
+    const hs = await Net.FirebaseStore(cfg, { app:'h', persistence:'none' });
+    const as = await Net.FirebaseStore(cfg, { app:'a', persistence:'none' });
+    const bs = await Net.FirebaseStore(cfg, { app:'b', persistence:'none' });
+    R.steps.push(`익명 계정 3개: ${[hs.uid, as.uid, bs.uid].map(u => u.slice(0, 6)).join(', ')} (서로 다름: ${new Set([hs.uid, as.uid, bs.uid]).size === 3})`);
+
+    const host = Net.Host(hs);
+    const code = await host.open('방장', 3);
+    R.steps.push(`방 생성: ${code}`);
+    const A = bot(as, '친구1'), B = bot(bs, '친구2');
+    await A.guest.join(code, '친구1');
+    await B.guest.join(code, '친구2');
+    const seated = await waitFor(() => host.seats.length === 3, 15000);
+    R.steps.push(`입장: ${host.seats.map(s => s.name).join(', ')} (${seated ? '성공' : '실패'})`);
+
+    const base = 'rooms/' + code;
+    await expectAllowed('친구가 방 정보 읽기',            () => as.get(base + '/meta'));
+    await expectAllowed('친구가 좌석 목록 읽기',          () => as.get(base + '/lobby'));
+    await expectDenied ('친구가 방 목록 전체 훑기',        () => as.get('rooms'));
+    await expectDenied ('친구가 방장 정보(meta) 덮어쓰기', () => as.update(base + '/meta', { status:'over' }));
+    await expectDenied ('친구가 좌석 목록 조작',          () => as.set(base + '/lobby', { seats:[] }));
+    await expectDenied ('친구가 방 삭제',                () => as.remove(base));
+    await expectDenied ('친구가 입장 요청 목록 읽기',      () => as.get(base + '/joins'));
+    await expectDenied ('친구가 남의 입장 요청 위조',      () => as.set(base + '/joins/' + bs.uid, { name:'가짜', t:1 }));
+    await expectDenied ('친구가 남의 접속 상태 조작',      () => as.set(base + '/presence/' + bs.uid, null));
+
+    const gameP = host.start();
+    await waitFor(() => R.views['친구1'] > 0 && R.views['친구2'] > 0, 15000);
+    await expectDenied ('친구가 다른 친구 화면(손패) 읽기', () => as.get(base + '/view/' + bs.uid));
+    await expectDenied ('친구가 방장 화면 읽기',          () => as.get(base + '/view/' + hs.uid));
+    await expectDenied ('친구가 자기 화면 위조',          () => as.set(base + '/view/' + as.uid, { hp:99 }));
+    await expectDenied ('친구가 입력함(inbox) 훔쳐보기',   () => as.get(base + '/inbox'));
+    await expectDenied ('친구가 남의 이름으로 입력 보내기',  () => as.set(base + '/inbox/' + bs.uid + '/x', { id:1, type:'end' }));
+    await expectAllowed('친구가 자기 화면 읽기',          () => as.get(base + '/view/' + as.uid));
+
+    // 연결 끊김 → AI 대행 → 재접속 복귀
+    await waitFor(() => G.round >= 2 || G.over, 60000);
+    if (!G.over){
+      bs.simulateDisconnect();
+      const off = await waitFor(() => G.log.some(e => e.msg.includes('친구2 연결 끊김')), 20000);
+      R.steps.push(`친구2 연결 끊기 → AI 대행: ${off ? '확인' : '안 됨'}`);
+      await sleepMs(4000);
+      bs.simulateReconnect();
+      const back = await waitFor(() => G.log.some(e => e.msg.includes('친구2 다시 연결됨')), 20000);
+      R.steps.push(`친구2 재접속 → 복귀: ${back ? '확인' : '안 됨'}`);
+    }
+
+    await Promise.race([gameP, sleepMs(420000)]);
+    await sleepMs(1500);
+    R.game = { over:G.over, round:G.round, deathmatch:G.deathmatch, winner:G.winner && G.winner.name,
+               seats:G.players.map(p => `${p.name}${p.remote ? '(원격)' : p.isAI ? '(AI)' : '(방장)'}`),
+               guestsSawEnd:[A.over, B.over] };
+    host.close();
+    await sleepMs(1500);
+    // 친구 계정은 방 전체를 읽을 수 없으므로 읽을 수 있는 부분(meta, lobby)으로 확인
+    const leftover = { meta: await as.get(base + '/meta'), lobby: await as.get(base + '/lobby') };
+    R.steps.push(`방 정리: ${!leftover.meta && !leftover.lobby ? '완전히 삭제됨' : '찌꺼기 남음 ' + JSON.stringify(leftover).slice(0, 80)}`);
+    R.code = code;
+  } catch (e){ errs.push('throw: ' + (e && e.stack || e)); }
+
+  R.errors = errs;
+  R.seconds = Math.round((Date.now() - t0) / 1000);
+  const lat = R.latency.slice().sort((a, b) => a - b);
+  R.latencyMs = lat.length ? { n:lat.length, median:lat[lat.length >> 1], p90:lat[Math.floor(lat.length * 0.9)] } : null;
+  const body = JSON.stringify(R).replace(/[-￿]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+  out.textContent = JSON.stringify(R, null, 2);
+  try { await fetch('/report', { method:'POST', body }); } catch (e) {}
+})();
+</script>
+</body>
+</html>

@@ -447,6 +447,21 @@ test('처치 보너스: 0으로 두면 비활성화', async () => {
   eq('  회복 없음', a.hp, 9);
 });
 
+/* ---------- 32. 복사한 토네이도: 상대가 1명뿐일 때 ---------- */
+test('프리즘으로 토네이도 복사 — 상대 1명이면 대상 2명을 묻지 않음 (처리 불가: 가능한 만큼)', async () => {
+  const [a,b] = setup(2);
+  const asked = [];
+  const orig = G.io.ask;
+  G.io.ask = spec => { asked.push({ kind:spec.kind, count:spec.count, n:(spec.list || []).length }); return orig(spec); };
+  // 프리즘 후보 목록의 첫 카드가 토네이도 → 기본 응답이 토네이도를 고른다
+  await playCard(a, give(a,'prism'), { targets:[] });
+  G.io.ask = orig;
+  const bad = asked.filter(s => s.kind === 'players' && s.count > s.n);
+  eq('  후보보다 많은 대상을 요구한 선택 창', bad.length, 0);
+  is('  토네이도 효과로 넘어감', G.log.some(e => e.msg.includes('「토네이도」 공개')));
+  is('  대상 부족으로 가능한 만큼만 처리', G.log.some(e => e.msg.includes('대상 부족')));
+});
+
 /* ---------- 실행 ---------- */
 (async () => {
   for (const t of T){

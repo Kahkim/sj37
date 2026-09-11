@@ -1,0 +1,44 @@
+{
+  "rules": {
+    "rooms": {
+      "$code": {
+        ".write": "auth != null && data.child('meta/host').val() === auth.uid",
+
+        "meta": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() || data.child('host').val() === auth.uid)",
+          "host": { ".validate": "newData.val() === auth.uid" }
+        },
+
+        "lobby": {
+          ".read": "auth != null"
+        },
+
+        "presence": {
+          ".read": "auth != null",
+          "$uid": { ".write": "auth != null && auth.uid === $uid" }
+        },
+
+        "joins": {
+          ".read": "auth != null && root.child('rooms').child($code).child('meta/host').val() === auth.uid",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.child('name').isString() && newData.child('name').val().length <= 20"
+          }
+        },
+
+        "view": {
+          "$uid": { ".read": "auth != null && auth.uid === $uid" }
+        },
+
+        "inbox": {
+          ".read": "auth != null && root.child('rooms').child($code).child('meta/host').val() === auth.uid",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            "$msg": { ".validate": "newData.hasChildren(['id', 'type'])" }
+          }
+        }
+      }
+    }
+  }
+}

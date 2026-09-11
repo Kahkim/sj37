@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>37 게임 멀티플레이 화면 검증</title>
+<style>
+  body{margin:0;background:#0a0c11;color:#8b95a9;font:12px system-ui,"Malgun Gothic",sans-serif}
+  .row{display:flex;gap:8px;padding:8px}
+  .col{display:flex;flex-direction:column;gap:4px}
+  iframe{width:430px;height:900px;border:2px solid #2e3646;border-radius:10px;background:#12151c}
+  #out{white-space:pre-wrap;padding:8px 12px;color:#c2cadb;font-family:ui-monospace,Consolas,monospace}
+</style>
+</head>
+<body>
+<!-- 실제 index.html 을 방장 1 + 친구 2 로 나란히 띄워, 로컬 가짜 서버로 연결해 한 판을 끝까지 둔다.
+     실행: chrome --allow-file-access-from-files (iframe 이 부모의 가짜 서버에 접근해야 함) -->
+<pre id="out">running...</pre>
+<div class="row">
+  <div class="col"><b>방장</b><iframe id="fHost"></iframe></div>
+  <div class="col"><b>친구1</b><iframe id="fA"></iframe></div>
+  <div class="col"><b>친구2</b><iframe id="fB"></iframe></div>
+</div>
+
+<script src="../js/net.js"></script>
+<script>
+window.__SJ37_HUB__ = Net.LocalHub();
+const errs = { fHost:[], fA:[], fB:[] };
+const Q = new URLSearchParams(location.search);
+const base = '../index.html?mp=local&autotest';
+const frames = {
+  fHost: `${base}&auto=host&name=방장&n=${Q.get('n') || 3}&wait=2&speed=${Q.get('speed') || 250}`,
+  fA:    `${base}&auto=guest&name=친구1`,
+  fB:    `${base}&auto=guest&name=친구2&delay=400`
+};
+Object.entries(frames).forEach(([id, src]) => {
+  const f = document.getElementById(id);
+  f.addEventListener('load', () => {
+    const w = f.contentWindow;
+    w.addEventListener('error', e => errs[id].push(String(e.message)));
+    w.addEventListener('unhandledrejection', e => errs[id].push(String(e.reason && e.reason.stack || e.reason)));
+  });
+  f.src = src;
+});
+
+const W = id => document.getElementById(id).contentWindow;
+// game.js 의 const G 는 window 속성이 아니므로 iframe 스코프에서 직접 읽는다
+const GG = id => { try { return W(id).eval('typeof G !== "undefined" ? G : null'); } catch (e){ return null; } };
+const out = document.getElementById('out');
+
+/* 참가자 화면에 남의 비공개 손패가 들어있는지 */
+function privacy(id){
+  const G = GG(id), bad = [];
+  if (!G || !G.players) return bad;
+  G.players.forEach(p => {
+    if (p.idx === G.localIdx) return;
+    if (!p.st.reveal && p.hand.some(c => c)) bad.push(`${id}: ${p.name}의 손패 내용이 보임`);
+  });
+  return bad;
+}
+
+let privacyBad = [], checks = 0, sawGuestTurn = { fA:false, fB:false }, sawTimer = false;
+const t0 = Date.now();
+(function poll(){
+  try {
+    const H = GG('fHost');
+    ['fA', 'fB'].forEach(id => {
+      const g = GG(id);
+      if (g && g.players && g.players.length){
+        checks++;
+        privacyBad.push(...privacy(id));
+        if (g.current && g.current.idx === g.localIdx) sawGuestTurn[id] = true;
+        const tt = W(id).document.getElementById('turnTimer');
+        if (tt && tt.textContent.includes('⏱')) sawTimer = true;
+      }
+    });
+    const done = H && H.over && ['fA', 'fB'].every(id => GG(id) && GG(id).over);
+    if (done || Date.now() - t0 > 280000){ report(done); return; }
+  } catch (e){ out.textContent = '오류: ' + e; }
+  setTimeout(poll, 150);
+})();
+
+function report(done){
+  const H = GG('fHost');
+  if (!H || !H.players || !H.players.length){
+    out.textContent = '방장 게임이 시작되지 않음 (대기실 단계에서 멈춤)\n오류: ' + JSON.stringify(errs);
+    return;
+  }
+  const seats = H.players.map(p => `${p.idx}:${p.name}(${p.remote ? '원격' : p.isAI ? 'AI' : '방장'})`).join(' ');
+  const sameEnd = ['fA', 'fB'].map(id => {
+    const g = GG(id);
+    const winH = H.winner ? H.winner.name : '-';
+    const winG = g.winner ? g.winner.name : '-';
+    const hpMatch = H.players.every(p => g.players[p.idx] && g.players[p.idx].hp === p.hp);
+    return `${id}: 게임종료=${g.over} 승자=${winG}(방장 ${winH}) HP일치=${hpMatch}`;
+  });
+  out.textContent =
+`=== 멀티플레이 화면 검증 (실제 index.html × 3) ===
+완주           : ${done ? '예' : '아니오 (시간 초과)'}  (${((Date.now() - t0) / 1000).toFixed(0)}초)
+좌석           : ${seats}
+라운드         : ${H.deathmatch ? '데스매치 ' : ''}${H.round}
+최종 화면 일치 :
+  ${sameEnd.join('\n  ')}
+친구 턴 발생   : 친구1 ${sawGuestTurn.fA} / 친구2 ${sawGuestTurn.fB}
+턴 타이머 표시 : ${sawTimer}
+손패 누출 검사 : ${checks}회 검사, 위반 ${privacyBad.length}
+${[...new Set(privacyBad)].slice(0, 5).join('\n')}
+오류           : 방장 ${errs.fHost.length} / 친구1 ${errs.fA.length} / 친구2 ${errs.fB.length}
+${[...errs.fHost, ...errs.fA, ...errs.fB].slice(0, 6).join('\n')}
+=== DONE ===`;
+}
+</script>
+</body>
+</html>
