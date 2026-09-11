@@ -475,6 +475,23 @@ const Net = (() => {
       syncNow();
     });
 
+    /* 방장 자신에게 묻는 선택 창도 제한 시간이 지나면 자동 선택한다.
+     * (다른 사람 턴에 「혼란」 지정 등으로 방장에게 질문이 오는데, 방장이 자리를 비우면 모두 멈추므로) */
+    H.askLocal = (p, spec) => new Promise(resolve => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        L(`  └ ${p.name}: 응답 시간 초과 — 자동으로 선택합니다`, 'dim');
+        if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+        resolve(AI.answer(p, spec));
+      }, CFG.askMs);
+      Promise.resolve(G.io.ask(spec)).then(v => {
+        if (settled) return;                     // 이미 자동 선택됨 (창이 닫히며 온 값은 버린다)
+        settled = true; clearTimeout(timer); resolve(v);
+      });
+    });
+
     H.onEngineEvent = (type, d) => {
       const w = eventToWire(type, d);
       if (!w) return;

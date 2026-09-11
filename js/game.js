@@ -300,6 +300,7 @@ function checkEarlyEnd(){
 async function ask(p, spec){
   if (p.isAI) return AI.answer(p, spec);
   if (p.remote && G.mp) return G.mp.askRemote(p, spec);   // 멀티플레이: 그 플레이어 화면에 묻는다
+  if (G.mp) return G.mp.askLocal(p, spec);                 // 멀티플레이 방장도 응답 시간 제한
   return G.io.ask(spec);
 }
 
